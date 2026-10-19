@@ -1,0 +1,1792 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>なみシンセ</title>
+<style>
+:root{
+  --bg:#1A1A2E; --panel:#24243F; --line:#2E2E4D; --text:#FFFFFF; --sub:#8A8AA3;
+  --l1:#00D9A3; --l2:#FF6B4A; --l3:#6F9BFF; --l4:#FFD166;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden;
+  font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+button,select{font-family:inherit}
+#app{position:absolute;left:0;top:0;width:1256px;padding:10px;display:flex;flex-direction:column;gap:8px;transform-origin:0 0}
+body.patching,body.patching *{cursor:grabbing !important}
+
+/* ---------- ヘッダー ---------- */
+header{display:flex;align-items:center;gap:12px;height:44px}
+.brand{display:flex;flex-direction:column;line-height:1.15;margin-right:6px}
+.brand b{font-size:22px;font-weight:800;letter-spacing:.04em}
+.brand span{font-size:11px;color:var(--sub)}
+.btn{height:34px;padding:0 14px;border-radius:10px;background:var(--line);border:1.5px solid #3a3a60;color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:#5a5a88}
+#play{min-width:138px;background:var(--l1);color:#0f2620;border:none;font-size:16px;font-weight:800}
+#play.playing{background:var(--l2);color:#fff}
+#play:disabled{background:var(--line);color:var(--sub);cursor:default;font-size:13px}
+.spacer{flex:1}
+#preset{height:34px;border-radius:10px;background:#3b2a1a;color:#fff;border:1.5px solid #a0703a;padding:0 8px;font-size:13px}
+.teacher-only{display:none}
+body.teacher .teacher-only{display:block}
+
+/* ---------- 共通：区切りボタン ---------- */
+.seg{display:flex;gap:6px}
+.seg button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:46px;padding:0;
+  background:var(--line);border:1.5px solid transparent;border-radius:9px;color:var(--sub);font-size:10.5px;font-weight:600;cursor:pointer}
+.seg button:hover{border-color:#4a4a72}
+.seg button svg{width:30px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.seg button.on{color:#fff;border-color:#fff;background:rgba(255,255,255,.10)}
+#mode button{height:34px;font-size:13px;padding:0 14px;flex-direction:row;white-space:nowrap;flex:none}
+#mode button.on{border-color:var(--l1);color:#fff;background:rgba(0,217,163,.15)}
+
+/* ---------- ？ヘルプ ---------- */
+.help{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--line);color:var(--sub);
+  font-size:12px;font-weight:800;cursor:help;position:relative;flex:none;outline:none}
+.help:hover,.help:focus{background:#44446a;color:#fff}
+.help:hover::after,.help:focus::after{content:attr(data-tip);position:absolute;left:-8px;top:calc(100% + 8px);background:#0e0e1d;color:#fff;
+  border:1px solid #44446a;padding:7px 11px;border-radius:9px;font-size:13px;font-weight:500;white-space:nowrap;z-index:50;pointer-events:none;
+  box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.help.r:hover::after,.help.r:focus::after{left:auto;right:-8px}
+
+/* ---------- 上段：VCO → VCF → VCA → 表示 ---------- */
+#top{display:flex;height:252px;margin-bottom:14px}
+.module{background:var(--panel);border-radius:14px;padding:9px 12px 8px;display:flex;flex-direction:column;gap:8px;position:relative}
+#m-vco,#m-vcf{width:272px}
+#m-vca{width:196px}
+.mhead{display:flex;align-items:center;gap:7px;height:26px}
+.mhead h2{font-size:20px;margin:0;font-weight:800;letter-spacing:.02em;white-space:nowrap}
+.msub{color:var(--sub);font-size:11px;margin-left:auto;letter-spacing:.12em}
+.flow{width:22px;flex:none;display:grid;place-items:center;color:var(--sub);font-size:22px;font-weight:700}
+.knobs{display:flex;justify-content:space-around;margin-top:auto}
+.vca-note{height:46px;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:12px;text-align:center;line-height:1.4}
+#displays{flex:1;min-width:0;display:grid;grid-template-rows:2fr 3fr;gap:6px}
+.disp{background:var(--panel);border-radius:14px;padding:6px 10px 8px;display:flex;flex-direction:column;min-height:0}
+.dhead{display:flex;align-items:center;gap:6px;height:20px;flex:none}
+.dhead h3{margin:0;font-size:14px;font-weight:800}
+.dhead .legend{margin-left:auto;font-size:11px;color:var(--sub);display:flex;gap:10px;align-items:center}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.disp canvas{flex:1 1 0;width:100%;height:0;min-height:0;border-radius:7px;display:block;margin-top:4px}
+
+/* ---------- ノブ ---------- */
+.knob{display:flex;flex-direction:column;align-items:center;width:118px;outline:none;position:relative}
+#top .knob{--c:#ffffff}
+.knob svg{width:76px;height:76px;touch-action:none;cursor:ns-resize;overflow:visible;display:block}
+.k-track{fill:none;stroke:#3a3a62;stroke-width:5;stroke-linecap:round}
+.k-fill{fill:none;stroke:var(--c);stroke-width:5;stroke-linecap:round;opacity:.85}
+.k-tick{stroke:#fff;stroke-width:3;stroke-linecap:round}
+.k-body{fill:#2E2E4D;stroke:#4a4a72;stroke-width:1.5}
+.knob:focus-visible .k-body,.knob.drag .k-body{stroke:#fff;stroke-width:2.5}
+.k-base{stroke:#fff;stroke-width:6;stroke-linecap:round}
+.k-cur{stroke-width:2.6;stroke-linecap:round}
+.k-mod{fill:none;stroke-width:4;stroke-linecap:round}
+.k-modg{fill:none;stroke-width:12;stroke-linecap:round}
+.k-dot{stroke:#fff;stroke-width:1.6}
+.k-ring{fill:none;stroke:#fff;stroke-width:3;opacity:0;transition:opacity .2s}
+.knob.audio{--c:#ffffff}
+.knob.audio .k-ring{opacity:.95;filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px rgba(255,255,255,.6))}
+.knob.idle svg,.knob.idle .k-val{opacity:.35}
+.k-label{font-size:13px;font-weight:800;margin-top:1px;white-space:nowrap}
+.k-val{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.k-now{font-size:11.5px;line-height:13px;height:26px;text-align:center;white-space:pre-line;color:var(--sub);font-variant-numeric:tabular-nums;font-weight:700}
+.knob.sm{display:grid;grid-template-columns:42px auto;grid-template-rows:auto auto;column-gap:8px;align-items:center;width:auto;--c:#fff}
+.knob.sm svg{grid-row:1/3;width:42px;height:42px}
+.knob.sm .k-label{font-size:11px;color:var(--sub);margin:0;align-self:end;font-weight:600}
+.knob.sm .k-val{font-size:14px;font-weight:700;align-self:start}
+.knob.sm .k-now{display:none}
+
+/* ---------- ジャック（行き先）---------- */
+.dj{position:absolute;left:calc(50% + 36px);top:8px;width:17px;height:17px;margin:-8.5px 0 0 -8.5px;border-radius:50%;
+  background:#11112a;border:2.5px solid #6a6a8c;box-shadow:inset 0 0 0 3px #11112a,inset 0 0 0 8px #3c3c5c;
+  pointer-events:none;transition:transform .12s,border-color .12s,box-shadow .12s;z-index:2}
+.lfo .dj{left:calc(50% + 30px);top:6px}
+.dj.inline{position:relative;left:auto;top:auto;margin:0;flex:none}
+body.patching .dj{border-color:#fff;box-shadow:inset 0 0 0 3px #11112a,inset 0 0 0 8px #3c3c5c,0 0 0 4px rgba(255,255,255,.15)}
+.dj.hot{transform:scale(1.45);border-color:var(--hot) !important;box-shadow:inset 0 0 0 3px #11112a,inset 0 0 0 8px var(--hot),0 0 14px var(--hot) !important}
+
+/* ---------- LFO・S&H ---------- */
+#lfos{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;height:240px}
+.lfo{background:var(--panel);border-radius:14px;padding:8px 11px 9px;position:relative;display:flex;flex-direction:column;gap:6px;border-top:3px solid var(--c)}
+.lfo-head{display:flex;align-items:center;gap:6px;height:26px}
+.lfo-head h2{color:var(--c);font-size:20px;margin:0;font-weight:800;letter-spacing:.03em;white-space:nowrap}
+.outl{font-size:11px;color:var(--sub);font-weight:700;margin-left:auto}
+.outj{width:22px;height:22px;border-radius:50%;background:var(--c);border:4px solid #11112a;box-shadow:0 0 0 2px var(--c),0 0 10px var(--c);
+  cursor:grab;touch-action:none;flex:none}
+.outj:hover{transform:scale(1.12)}
+.toggle{margin-left:4px;display:flex;align-items:center;gap:6px;background:var(--line);border:none;border-radius:999px;padding:3px 10px 3px 3px;color:var(--sub);font-size:12px;font-weight:700;cursor:pointer}
+.toggle .sw{width:32px;height:19px;border-radius:10px;background:#44446a;position:relative}
+.toggle .sw::after{content:'';position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#9a9ab5;transition:transform .15s}
+.toggle[aria-pressed="true"]{color:#fff}
+.toggle[aria-pressed="true"] .sw{background:var(--c)}
+.toggle[aria-pressed="true"] .sw::after{transform:translateX(13px);background:#fff}
+.lfo-body{display:flex;align-items:flex-start;height:108px}
+.lfo .knob{width:88px}
+.lfo .knob svg{width:64px;height:64px}
+.lfo .k-now{display:none}
+.lfo .k-val{font-size:11.5px;line-height:13px;height:27px;white-space:pre-line;text-align:center}
+.mini{width:98px;height:100px;border-radius:8px;margin-left:auto;display:block}
+.row{display:flex;align-items:center;gap:6px;min-height:30px}
+.rl{font-size:11px;color:var(--sub);min-width:36px;flex:none;font-weight:700;white-space:nowrap}
+.row .seg{flex:1}
+.lfo .seg{gap:5px}
+.lfo .seg button{height:30px;flex-direction:row;font-size:12px}
+.lfo .seg button svg{width:26px;height:16px}
+.lfo .seg button.on{color:var(--c);border-color:var(--c);background:var(--cb)}
+.jn{font-size:10.5px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px}
+.jn.on{color:#fff}
+.conns{display:flex;gap:4px;overflow:hidden;flex:1;align-items:center;min-width:0}
+.chip{height:24px;padding:0 8px;border-radius:12px;border:1.5px solid var(--c);background:var(--cb);color:#fff;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer;flex:none}
+.chip:hover{background:var(--c);color:#11112a}
+.chip.zero{border-style:dashed;background:none;color:var(--sub)}
+.hint{font-size:10.5px;color:var(--sub);white-space:nowrap}
+.lfo.off{border-top-color:#3a3a5a}
+.lfo.off .lfo-body,.lfo.off .row{opacity:.33}
+.lfo.off h2{opacity:.5}
+.lfo.off .outj{opacity:.55}
+
+/* ---------- ケーブルの深さ（ポップアップ）---------- */
+.pop{position:absolute;z-index:60;background:#11112a;border:1.5px solid var(--c);border-radius:14px;padding:9px 12px 11px;
+  box-shadow:0 10px 30px rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;gap:4px;width:200px}
+.pop[hidden]{display:none}
+.pop-title{font-size:13px;font-weight:800;white-space:nowrap}
+.pop-title b{color:var(--c)}
+.pop .knob{width:170px}
+.pop .k-now{display:none}
+.pop .k-val{font-size:14px;font-weight:700}
+.pop-btns{display:flex;gap:6px;margin-top:4px}
+.pop .btn{height:28px;font-size:12px;padding:0 10px}
+
+/* ---------- 鍵盤 ---------- */
+#kbd{height:96px;display:flex;align-items:center;justify-content:center;gap:24px}
+.keys{position:relative;height:94px;width:432px;touch-action:none}
+.key{position:absolute;top:0;height:94px;width:52px;background:#e9e9f2;border-radius:0 0 9px 9px;color:#1A1A2E;display:flex;flex-direction:column;
+  justify-content:flex-end;align-items:center;font-size:12px;font-weight:800;padding-bottom:5px;cursor:pointer;line-height:1.25}
+.key small{color:#8A8AA3;font-size:10px;font-weight:700}
+.key.b{width:34px;height:56px;background:#101020;color:#d0d0e0;z-index:2;font-size:9.5px;border:1px solid #3a3a60;border-top:none}
+.key.on,.key.b.on{background:var(--l1);color:#0f2620}
+.kbd-hint{color:var(--sub);font-size:13px;line-height:1.6}
+.kbd-hint b{color:#fff;letter-spacing:.15em}
+body:not(.mode-kbd) .kbd-only{display:none !important}
+
+/* ---------- パッチケーブル ---------- */
+#cables{position:absolute;left:0;top:0;pointer-events:none;z-index:5;overflow:visible}
+#cables path{fill:none;stroke-linecap:round}
+#cables .plug{pointer-events:all;cursor:grab;touch-action:none}
+
+/* ---------- 開始画面・トースト ---------- */
+#overlay{position:fixed;inset:0;background:rgba(14,14,28,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:100}
+#start{font-size:30px;padding:22px 48px;border-radius:20px;background:var(--l1);color:#0f2620;border:none;font-weight:800;cursor:pointer;box-shadow:0 0 50px rgba(0,217,163,.45)}
+#start:disabled{opacity:.6;cursor:wait}
+#overlay p{margin:0;color:var(--sub);font-size:15px;text-align:center;line-height:1.7}
+#overlay .err{color:var(--l2);font-weight:700}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#0e0e1d;border:1px solid #44446a;color:#fff;
+  padding:10px 18px;border-radius:12px;font-size:14px;font-weight:700;opacity:0;transition:opacity .2s,transform .2s;z-index:120;pointer-events:none}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><b>なみシンセ</b><span>第3回 シンセサイザーと音の合成</span></div>
+    <button id="play" class="btn">▶ 鳴らす</button>
+    <div class="seg" id="mode" role="group" aria-label="鳴らし方">
+      <button data-v="drone">鳴らしっぱなし</button><button data-v="kbd">鍵盤</button>
+    </div>
+    <div class="spacer"></div>
+    <select id="preset" class="teacher-only" aria-label="講師用プリセット"></select>
+    <div id="k-master"></div>
+    <button id="copy" class="btn">設定をコピー</button>
+    <button id="reset" class="btn">リセット</button>
+  </header>
+
+  <section id="top">
+    <div class="module" id="m-vco">
+      <div class="mhead"><h2>オシレーター</h2><span class="help" tabindex="0" data-tip="音のもとになる波をつくる。波の形で音色が、高さで音程が変わる">?</span><span class="msub">VCO</span></div>
+      <div class="seg" id="osc-waves"></div>
+      <div class="knobs"><div id="k-pitch"></div><div id="k-noise"></div></div>
+    </div>
+    <div class="flow">→</div>
+    <div class="module" id="m-vcf">
+      <div class="mhead"><h2>フィルター</h2><span class="help" tabindex="0" data-tip="必要な高さの範囲だけを通して、音の明るさを変える">?</span><span class="msub">VCF</span></div>
+      <div class="seg" id="f-types"></div>
+      <div class="knobs"><div id="k-cutoff"></div><div id="k-reso"></div></div>
+    </div>
+    <div class="flow">→</div>
+    <div class="module" id="m-vca">
+      <div class="mhead"><h2>アンプ</h2><span class="help" tabindex="0" data-tip="音の大きさを決める">?</span><span class="msub">VCA</span></div>
+      <div class="vca-note">音の大きさ</div>
+      <div class="knobs"><div id="k-vol"></div><div id="k-decay"></div></div>
+    </div>
+    <div class="flow">→</div>
+    <div id="displays">
+      <div class="disp">
+        <div class="dhead"><h3>波形</h3><span class="help r" tabindex="0" data-tip="スピーカーへ送られる波の形（オシロスコープ）">?</span><span class="legend">時間 →</span></div>
+        <canvas id="scope"></canvas>
+      </div>
+      <div class="disp">
+        <div class="dhead"><h3>成分とフィルター</h3><span class="help r" tabindex="0" data-tip="音にふくまれる高さの成分（山）と、フィルターが通す範囲（線）">?</span>
+          <span class="legend"><span><i style="background:#9a9ab8"></i>成分</span><span><i style="background:#fff"></i>フィルター</span></span></div>
+        <canvas id="spec"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <section id="lfos"></section>
+
+  <section id="kbd" class="kbd-only">
+    <div class="keys" id="keys"></div>
+    <div class="kbd-hint">押している間だけ鳴ります。<br>PCのキー <b>AWSEDFTGYHUJK</b> でも弾けます</div>
+  </section>
+
+  <svg id="cables" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <div class="pop" id="pop" hidden>
+    <div class="pop-title"><b class="pop-src"></b> → <span class="pop-dst"></span></div>
+    <div id="k-cdepth"></div>
+    <div class="pop-btns"><button class="btn" id="pop-del">ケーブルを外す</button><button class="btn" id="pop-close">閉じる</button></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <button id="start">クリックして始める</button>
+  <p>音量は小さめから始まります。<br>音が出たら、つまみをドラッグして動かしてみよう。</p>
+  <p class="err" id="err"></p>
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* =========================================================
+   定数・初期値
+   ========================================================= */
+const COLORS = ['#00D9A3', '#FF6B4A', '#6F9BFF', '#FFD166'];
+const COLOR_BG = ['rgba(0,217,163,.14)', 'rgba(255,107,74,.14)', 'rgba(111,155,255,.14)', 'rgba(255,209,102,.14)'];
+const SRC_JA = ['LFO1', 'LFO2', 'LFO3', 'S&H'];
+const SH = 3;   // S&H は4つ目の「変調のもと」
+const OSC_WAVES = ['sine', 'triangle', 'sawtooth', 'square'];
+const LFO_WAVES = ['sine', 'triangle', 'sawtooth', 'square', 'sh'];
+const WAVE_JA = { sine: 'サイン波', triangle: '三角波', sawtooth: 'ノコギリ波', square: '矩形波', sh: 'S&H（ランダム）' };
+const FTYPES = ['lowpass', 'highpass', 'bandpass'];
+const FT_JA = { lowpass: 'ローパス', highpass: 'ハイパス', bandpass: 'バンドパス' };
+const FAST_HZ = 15;   // これより速いと針を描かない
+const AUDIO_HZ = 20;  // これ以上は「音の速さ」
+const Q_MIN = 0.7, Q_MAX = 18;
+const RATE_OCT = 4;   // 速さへの変調：深さ100%で ±4オクターブ
+const MAX_CABLES = 24;
+
+// 書式
+const trimNum = s => (s.indexOf('.') >= 0 ? s.replace(/0+$/, '').replace(/\.$/, '') : s);
+const fmt1 = x => (x < 10 ? trimNum((Math.round(x * 10) / 10).toFixed(1)) : String(Math.round(x)));
+const pct = v => Math.round(v * 100) + '%';
+const pctpm = d => `±${Math.round(d * 100)}%`;
+const fmtHz = v => (v < 100 ? v.toFixed(1) : String(Math.round(v))) + ' Hz';
+const NOTE_JA = ['ド', 'ド♯', 'レ', 'レ♯', 'ミ', 'ファ', 'ファ♯', 'ソ', 'ソ♯', 'ラ', 'ラ♯', 'シ'];
+const noteName = f => NOTE_JA[((Math.round(69 + 12 * Math.log2(f / 440)) % 12) + 12) % 12];
+function fmtRate(r) {
+  if (r >= AUDIO_HZ) return `音の速さ\n（${Math.round(r)} Hz）`;
+  return `1秒に${trimNum(r < 1 ? r.toFixed(2) : r < 10 ? r.toFixed(1) : r.toFixed(0))}回`;
+}
+
+// 行き先（ジャック）の一覧
+//   scale … 音の側でつなぐもの（深さ100%のときの変調量）
+//   code  … 変調ワークレットの中で使うもの
+const DSTS = {
+  pitch:  { ja: '高さ', short: '高さ', scale: 2400, fmt: d => `±${fmt1(d * 24)}半音` },
+  noise:  { ja: 'ノイズ', short: 'ノイズ', scale: 2, fmt: pctpm },
+  cutoff: { ja: 'カットオフ', short: 'カットオフ', scale: 6000, fmt: d => `±${fmt1(d * 5)}オクターブ` },
+  reso:   { ja: 'レゾナンス', short: 'レゾナンス', scale: 2, fmt: pctpm },
+  amp:    { ja: '音量', short: '音量', scale: 1, fmt: pctpm },
+};
+for (let i = 0; i < 4; i++) {
+  DSTS['rate' + i] = { ja: `${SRC_JA[i]}の速さ`, short: `${SRC_JA[i]}速さ`, code: i, fmt: d => `±${fmt1(d * RATE_OCT)}オクターブ` };
+  DSTS['lvl' + i] = { ja: `${SRC_JA[i]}の出力`, short: `${SRC_JA[i]}出力`, code: 4 + i, fmt: pctpm };
+}
+DSTS.shin = { ja: 'S&Hの入力', short: 'S&H入力', code: 8, fmt: d => `×${pct(d)}` };
+DSTS.shclk = { ja: 'S&Hのクロック', short: 'S&Hクロック', code: 9, fmt: d => `×${pct(d)}` };
+// ノブ上の振れ幅（深さ100%のとき、0〜1の正規化単位で）
+function rangeN(d) {
+  if (d === 'pitch') return 2 / Math.log2(2000 / 40);
+  if (d === 'cutoff') return 5 / Math.log2(12000 / 40);
+  if (d.startsWith('rate')) return RATE_OCT / Math.log2(1000 / 0.05);
+  return 1;
+}
+
+const DEF = {
+  mode: 'drone', wave: 'sawtooth', pitch: 220, noise: 0,
+  ftype: 'lowpass', cutoff: 1200, reso: 0.15, vol: 0.7, master: 0.3, decay: 0.3,
+  src: [
+    { on: true,  wave: 'sine', rate: 1, level: 1 },
+    { on: false, wave: 'sine', rate: 1, level: 1 },
+    { on: false, wave: 'sine', rate: 1, level: 1 },
+    { on: false, wave: 'sine', rate: 8, level: 1 },   // S&H（wave は使わない）
+  ],
+  cables: [{ s: 0, d: 'cutoff', depth: 0 }],
+};
+
+// 講師用プリセット（?teacher=1 のときだけ表示）。cables は [もと, 行き先, 深さ]
+const PRESETS = {
+  'ビブラート': { src: { 1: { on: true, wave: 'sine', rate: 5 } }, cables: [[1, 'pitch', 0.5 / 24]] },
+  'トレモロ': { src: { 2: { on: true, wave: 'sine', rate: 6 } }, cables: [[2, 'amp', 0.5]] },
+  'ワウ': { reso: 0.6, cutoff: 900, src: { 0: { on: true, wave: 'triangle', rate: 1.5 } }, cables: [[0, 'cutoff', 0.4]] },
+  'サイレン': { wave: 'sine', pitch: 600, src: { 1: { on: true, wave: 'triangle', rate: 0.4 } }, cables: [[1, 'pitch', 7 / 24]] },
+  '鐘（FM）': { mode: 'kbd', wave: 'sine', pitch: 440, cutoff: 12000, reso: 0, decay: 1.5,
+    src: { 0: { on: false }, 1: { on: true, wave: 'sine', rate: 616 } }, cables: [[1, 'pitch', 0.5]] },
+  'ヘリコプター（AM）': { noise: 1, cutoff: 800, reso: 0.1, src: { 2: { on: true, wave: 'square', rate: 12 } }, cables: [[2, 'amp', 0.8]] },
+  '宇宙船のコンピューター（S&H）': { wave: 'square', pitch: 440, src: { 0: { on: false }, 3: { on: true, rate: 8 } }, cables: [[3, 'pitch', 0.5]] },
+  '階段のサイレン（LFO→S&H）': { pitch: 330, src: { 0: { on: true, wave: 'triangle', rate: 0.25 }, 3: { on: true, rate: 10 } },
+    cables: [[0, 'shin', 1], [3, 'pitch', 0.3]] },
+  'ゆれる速さ（LFO→LFO）': { src: { 0: { on: true, wave: 'sine', rate: 0.15 }, 1: { on: true, wave: 'sine', rate: 5 } },
+    cables: [[1, 'pitch', 0.03], [0, 'rate1', 0.6]] },
+  '呼吸する音': { src: { 0: { on: true, wave: 'sine', rate: 0.2 } }, cables: [[0, 'cutoff', 0.6]] },
+};
+
+const ICON = {
+  sine: 'M2 10 Q9 -4 16 10 T30 10',
+  triangle: 'M2 10 L9 3 L23 17 L30 10',
+  sawtooth: 'M2 16 L15 4 V16 L28 4 V16',
+  square: 'M2 16 V4 H16 V16 H30 V4',
+  sh: 'M2 12 H8 V4 H14 V15 H20 V7 H26 V13 H30',
+  lowpass: 'M2 8 H20 Q26 8 28 4 Q30 1 32 10 L38 19',
+  highpass: 'M2 19 L8 10 Q10 1 12 4 Q14 8 20 8 H38',
+  bandpass: 'M3 19 Q13 17 16 8 Q20 -1 24 8 Q27 17 37 19',
+};
+const icon = k => `<svg viewBox="${k in FT_JA ? '0 0 40 22' : '0 0 32 20'}" aria-hidden="true"><path d="${ICON[k]}"/></svg>`;
+
+const clone = o => JSON.parse(JSON.stringify(o));
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+const qLin = r => Q_MIN * Math.pow(Q_MAX / Q_MIN, r);
+// ローパス・ハイパスの Q は dB、バンドパスはふつうの Q
+const qParam = (type, r) => (type === 'bandpass' ? qLin(r) : 20 * Math.log10(qLin(r)));
+const qComp = (type, r) => (type === 'bandpass' ? Math.pow(qLin(r), 0.3) : Math.pow(qLin(r) / Q_MIN, -0.3));
+const masterGain = m => 0.7 * Math.pow(m, 1.5);
+
+/* =========================================================
+   変調のもと（LFO×3 と S&H）
+   AudioWorklet でも、予備の ScriptProcessor でも同じものを使う。
+   LFO→LFO、LFO→S&H のような「変調どうしのつなぎ」はこの中で計算する。
+   ========================================================= */
+class ModCore {
+  constructor(sr) {
+    this.sr = sr;
+    this.s = [0, 1, 2, 3].map(() => ({ on: false, wave: 0, rate: 1, level: 1, phase: 0, sh: Math.random() * 2 - 1, out: 0, rEff: 1, lEff: 1 }));
+    this.cab = [];
+    this.mod = new Float64Array(10);
+    this.hasIn = false; this.hasClk = false;
+    this.clkPrev = 0; this.held = Math.random() * 2 - 1;
+    this.since = 0; this.est = 0;
+    this.cnt = 0; this.iv = Math.round(sr / 60);
+  }
+  msg(m) {
+    if (m.type === 'src') {
+      const L = this.s[m.i];
+      L.on = m.on; L.wave = m.wave; L.rate = m.rate; L.level = m.level;
+    } else if (m.type === 'patch') {
+      this.cab = m.list;
+      this.hasIn = m.list.some(c => c[1] === 8);
+      this.hasClk = m.list.some(c => c[1] === 9);
+    } else if (m.type === 'reset') {
+      for (const L of this.s) { L.phase = 0; L.sh = Math.random() * 2 - 1; }
+    }
+  }
+  static blep(t, dt) {
+    if (t < dt) { t /= dt; return t + t - t * t - 1; }
+    if (t > 1 - dt) { t = (t - 1) / dt; return t * t + t + t + 1; }
+    return 0;
+  }
+  render(outs, n) {
+    const S = this.s, mod = this.mod, cab = this.cab, nc = cab.length, sr = this.sr;
+    for (let k = 0; k < n; k++) {
+      // 1つ前のサンプルの出力から、行き先ごとの変調量を足し合わせる
+      mod.fill(0);
+      for (let c = 0; c < nc; c++) { const C = cab[c]; mod[C[1]] += C[2] * S[C[0]].out; }
+      // LFO
+      for (let i = 0; i < 3; i++) {
+        const L = S[i];
+        let rate = L.rate * Math.pow(2, 4 * mod[i]);
+        rate = rate < 0.01 ? 0.01 : rate > 4000 ? 4000 : rate;
+        const dt = rate / sr, p = L.phase;
+        L.rEff = rate;
+        let lv = L.level + mod[4 + i];
+        lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
+        L.lEff = lv;
+        let v = 0;
+        if (L.on) {
+          switch (L.wave) {
+            case 0: v = Math.sin(2 * Math.PI * p); break;
+            case 1: v = p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4; break;
+            case 2: v = 2 * p - 1 - ModCore.blep(p, dt); break;
+            case 3: v = (p < 0.5 ? 1 : -1) + ModCore.blep(p, dt) - ModCore.blep((p + 0.5) % 1, dt); break;
+            default: v = L.sh;
+          }
+        }
+        L.out = v * lv;
+        if (outs[i]) outs[i][k] = L.out;
+        let np = p + dt;
+        if (np >= 1) { np -= 1; if (L.wave === 4) L.sh = Math.random() * 2 - 1; }
+        L.phase = np;
+      }
+      // S&H：クロックのたびに入力（なければランダム）を拾って保つ
+      const H = S[3];
+      let trig = false;
+      if (this.hasClk) {
+        const c = mod[9];
+        if (c > 0 && this.clkPrev <= 0) trig = true;
+        this.clkPrev = c;
+      } else {
+        let rate = H.rate * Math.pow(2, 4 * mod[3]);
+        rate = rate < 0.01 ? 0.01 : rate > 4000 ? 4000 : rate;
+        H.phase += rate / sr;
+        if (H.phase >= 1) { H.phase -= 1; trig = true; }
+        this.est = rate;
+      }
+      this.since++;
+      if (trig) {
+        if (this.hasClk) this.est = sr / this.since;
+        this.since = 0;
+        this.held = this.hasIn ? (mod[8] < -1 ? -1 : mod[8] > 1 ? 1 : mod[8]) : Math.random() * 2 - 1;
+      }
+      H.rEff = this.hasClk ? Math.min(this.est, sr / this.since) : this.est;
+      let lv = H.level + mod[7];
+      lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
+      H.lEff = lv;
+      H.out = H.on ? this.held * lv : 0;
+      if (outs[3]) outs[3][k] = H.out;
+    }
+    this.cnt += n;
+    if (this.cnt >= this.iv) { this.cnt -= this.iv; return true; }
+    return false;
+  }
+  report() {
+    const r = [];
+    for (const L of this.s) r.push(L.phase, L.out, L.rEff, L.lEff);
+    return r;
+  }
+}
+
+const WORKLET_SRC = ModCore.toString() + `
+class ModProcessor extends AudioWorkletProcessor {
+  constructor() { super(); this.c = new ModCore(sampleRate); this.port.onmessage = e => this.c.msg(e.data); }
+  process(inputs, outputs) {
+    const n = outputs[0][0].length;
+    if (this.c.render([outputs[0][0], outputs[1][0], outputs[2][0], outputs[3][0]], n)) this.port.postMessage(this.c.report());
+    return true;
+  }
+}
+registerProcessor('modsrc', ModProcessor);
+
+// フィルター（状態変数フィルター）。カットオフを音の速さで動かしても壊れにくい。
+// 万一おかしな値（NaN など）になっても、その場で自動的に元に戻す。
+class SvfProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'cutoff', defaultValue: 1200, minValue: 0, maxValue: 100000, automationRate: 'a-rate' },
+      { name: 'detune', defaultValue: 0, minValue: -1e6, maxValue: 1e6, automationRate: 'a-rate' },
+      { name: 'q', defaultValue: 0, minValue: -1e6, maxValue: 1e6, automationRate: 'a-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    this.type = 0; this.s1 = 0; this.s2 = 0;
+    this.port.onmessage = e => { if (typeof e.data.type === 'number') this.type = e.data.type; };
+  }
+  process(inputs, outputs, p) {
+    const out = outputs[0][0], inp = inputs[0] && inputs[0][0], n = out.length;
+    const C = p.cutoff, D = p.detune, Q = p.q, fmax = sampleRate * 0.45, t = this.type;
+    let s1 = this.s1, s2 = this.s2;
+    for (let i = 0; i < n; i++) {
+      const x = inp ? inp[i] : 0;
+      let fc = (C.length > 1 ? C[i] : C[0]) * Math.pow(2, (D.length > 1 ? D[i] : D[0]) / 1200);
+      if (!(fc > 10)) fc = 10; else if (fc > fmax) fc = fmax;
+      let q = Q.length > 1 ? Q[i] : Q[0];
+      if (!(q > 0.5)) q = 0.5; else if (q > 40) q = 40;
+      const g = Math.tan(Math.PI * fc / sampleRate), k = 1 / q;
+      const a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2;
+      const v3 = x - s2, v1 = a1 * s1 + a2 * v3, v2 = s2 + a2 * s1 + a3 * v3;
+      s1 = 2 * v1 - s1; s2 = 2 * v2 - s2;
+      out[i] = t === 0 ? v2 : t === 1 ? x - k * v1 - v2 : k * v1;
+    }
+    if (!isFinite(s1) || !isFinite(s2)) { s1 = 0; s2 = 0; out.fill(0); }
+    this.s1 = s1; this.s2 = s2;
+    return true;
+  }
+}
+registerProcessor('svf', SvfProcessor);
+`;
+
+// メインスレッド側の表示用の値
+const LV = [0, 1, 2, 3].map(() => ({ phase: 0, val: 0, rate: 1, lvl: 1, t: 0, hist: [0, 0, 0, 0, 0, 0] }));
+function onReport(r) {
+  const now = performance.now();
+  for (let i = 0; i < 4; i++) {
+    const L = LV[i], v = r[4 * i + 1];
+    if (i < 3 && S.src[i].wave === 'sh' && v !== L.hist[L.hist.length - 1]) {
+      L.hist.push(v); if (L.hist.length > 6) L.hist.shift();
+    }
+    L.phase = r[4 * i]; L.val = v; L.rate = r[4 * i + 2]; L.lvl = r[4 * i + 3]; L.t = now;
+  }
+}
+function waveFn(w, p) {
+  switch (w) {
+    case 'sine': return Math.sin(2 * Math.PI * p);
+    case 'triangle': return p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4;
+    case 'sawtooth': return 2 * p - 1;
+    case 'square': return p < 0.5 ? 1 : -1;
+  }
+  return 0;
+}
+
+/* =========================================================
+   オーディオ
+   ========================================================= */
+const A = {
+  ready: false, ctx: null, last: {}, sk: [], pk: '', cg: new Map(), pitchTc: 0.012, wave: null, ftype: null,
+
+  async init() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) throw new Error('このブラウザは Web Audio に対応していません');
+    const c = new AC({ latencyHint: 'interactive' });
+    this.ctx = c;
+    if (c.resume) c.resume();
+
+    // --- 変調のもと（AudioWorklet。だめなら ScriptProcessor で代用） ---
+    let mod = null;
+    if (c.audioWorklet && window.AudioWorkletNode) {
+      const urls = [
+        URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'text/javascript' })),
+        'data:text/javascript;charset=utf-8,' + encodeURIComponent(WORKLET_SRC),
+      ];
+      for (const u of urls) {
+        try {
+          await c.audioWorklet.addModule(u);
+          mod = new AudioWorkletNode(c, 'modsrc', { numberOfInputs: 0, numberOfOutputs: 4, outputChannelCount: [1, 1, 1, 1] });
+          break;
+        } catch (e) { console.warn('AudioWorklet を読み込めませんでした', e); }
+      }
+    }
+    if (mod) {
+      mod.port.onmessage = e => onReport(e.data);
+      this.modSend = m => mod.port.postMessage(m);
+      this.modOut = mod;
+    } else {
+      const core = new ModCore(c.sampleRate);
+      const sp = c.createScriptProcessor(512, 1, 4);
+      const split = c.createChannelSplitter(4);
+      sp.onaudioprocess = e => {
+        const ob = e.outputBuffer;
+        if (core.render([0, 1, 2, 3].map(k => ob.getChannelData(k)), ob.length)) onReport(core.report());
+      };
+      const z = c.createGain(); z.gain.value = 0;
+      sp.connect(split); sp.connect(z); z.connect(c.destination);
+      this.modSend = m => core.msg(m);
+      this.modOut = split;
+      this.sp = sp;
+    }
+
+    // --- 音の流れ ---
+    const s = S;
+    const curve = f => { const a = new Float32Array(1025); for (let k = 0; k <= 1024; k++) a[k] = f(k / 1024); return a; };
+    const osc = c.createOscillator(); osc.type = s.wave; osc.frequency.value = s.pitch;
+    const gVco = c.createGain(); gVco.gain.value = 0;
+    const len = c.sampleRate * 2, nb = c.createBuffer(1, len, c.sampleRate), nd = nb.getChannelData(0);
+    for (let i = 0; i < len; i++) nd[i] = Math.random() * 2 - 1;
+    const noise = c.createBufferSource(); noise.buffer = nb; noise.loop = true;
+    const gNoise = c.createGain(); gNoise.gain.value = 0;
+    // ノイズ量：基準値＋変調 を WaveShaper で 0〜100% に収めて、2つの音量に分ける
+    const nConst = c.createConstantSource(); nConst.offset.value = 2 * s.noise - 1;
+    const nBus = c.createGain();
+    const shV = c.createWaveShaper(); shV.curve = curve(r => 1 - r);
+    const shN = c.createWaveShaper(); shN.curve = curve(r => 0.9 * r);
+    nConst.connect(nBus); nBus.connect(shV); nBus.connect(shN);
+    shV.connect(gVco.gain); shN.connect(gNoise.gain);
+
+    // レゾナンス：基準値＋変調 を WaveShaper で Q に変換（範囲外は自動で端に止まる）
+    const qConst = c.createConstantSource(); qConst.offset.value = 2 * s.reso - 1;
+    const qBus = c.createGain();
+    qConst.connect(qBus);
+    let filter;
+    if (mod) {
+      filter = new AudioWorkletNode(c, 'svf', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      this.fCut = filter.parameters.get('cutoff');
+      this.fDet = filter.parameters.get('detune');
+      this.fCut.value = s.cutoff;
+      filter.port.postMessage({ type: FTYPES.indexOf(s.ftype) });
+      const shQ = c.createWaveShaper(); shQ.curve = curve(qLin);
+      qBus.connect(shQ); shQ.connect(filter.parameters.get('q'));
+      this.setFType = ft => filter.port.postMessage({ type: FTYPES.indexOf(ft) });
+    } else {
+      // 予備：ブラウザ標準のフィルター
+      filter = c.createBiquadFilter(); filter.type = s.ftype; filter.frequency.value = s.cutoff; filter.Q.value = 0;
+      this.fCut = filter.frequency; this.fDet = filter.detune;
+      const shDb = c.createWaveShaper(); shDb.curve = curve(r => qParam('lowpass', r));
+      const shLin = c.createWaveShaper(); shLin.curve = curve(r => qParam('bandpass', r));
+      const gDb = c.createGain(), gLin = c.createGain();
+      gDb.gain.value = s.ftype === 'bandpass' ? 0 : 1; gLin.gain.value = s.ftype === 'bandpass' ? 1 : 0;
+      qBus.connect(shDb); qBus.connect(shLin);
+      shDb.connect(gDb); shLin.connect(gLin); gDb.connect(filter.Q); gLin.connect(filter.Q);
+      this.setFType = ft => {
+        const now = c.currentTime, bp = ft === 'bandpass';
+        filter.type = ft;
+        gDb.gain.setValueAtTime(bp ? 0 : 1, now);
+        gLin.gain.setValueAtTime(bp ? 1 : 0, now);
+      };
+    }
+
+    const qc = c.createGain(); qc.gain.value = qComp(s.ftype, s.reso);
+    const duck = c.createGain();
+    const am = c.createGain();                        // AM用（基準1.0）
+    const env = c.createGain(); env.gain.value = 0;   // 鳴らす／止める・鍵盤の減衰
+    const vca = c.createGain(); vca.gain.value = s.vol;
+    const master = c.createGain(); master.gain.value = masterGain(s.master);
+    const lim = c.createDynamicsCompressor();
+    lim.threshold.value = -10; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.003; lim.release.value = 0.1;
+    const out = c.createGain(); out.gain.value = 0.5;   // −6 dB
+    // 最後の安全装置：どんな入力でも −6 dBFS を超えないソフトクリップ
+    const safe = c.createWaveShaper();
+    safe.curve = (() => { const a = new Float32Array(2049); for (let k = 0; k <= 2048; k++) a[k] = 0.5 * Math.tanh((k / 1024 - 1) * 2); return a; })();
+
+    const chain = (...ns) => { for (let i = 0; i < ns.length - 1; i++) ns[i].connect(ns[i + 1]); };
+    chain(osc, gVco, filter);
+    chain(noise, gNoise, filter);
+    chain(filter, qc, duck, am, env, vca, master, lim, out, safe, c.destination);
+
+    const anaScope = c.createAnalyser(); anaScope.fftSize = 2048;
+    const anaSpec = c.createAnalyser(); anaSpec.fftSize = 8192; anaSpec.smoothingTimeConstant = 0.55;
+    vca.connect(anaScope); vca.connect(anaSpec);
+
+    this.dstNode = { pitch: osc.detune, noise: nBus, cutoff: this.fDet, reso: qBus, amp: am.gain };
+    osc.start(); noise.start(); qConst.start(); nConst.start();
+
+    Object.assign(this, { osc, nConst, filter, qConst, qc, duck, am, env, vca, master, anaScope, anaSpec });
+    this.disp = c.createBiquadFilter();   // 表示用（どこにもつながない）
+    this.scopeBuf = new Float32Array(anaScope.fftSize);
+    this.specBuf = new Float32Array(anaSpec.frequencyBinCount);
+    this.wave = s.wave; this.ftype = s.ftype;
+    this.ready = true;
+  },
+
+  apply(s) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    const P = (k, param, v, tc = 0.012) => {
+      if (this.last[k] === v) return;
+      this.last[k] = v;
+      param.setTargetAtTime(v, t, tc);
+    };
+    P('f', this.osc.frequency, s.pitch, this.pitchTc);
+    P('n', this.nConst.offset, 2 * s.noise - 1);
+    P('cut', this.fCut, s.cutoff);
+    P('q', this.qConst.offset, 2 * s.reso - 1);
+    P('qc', this.qc.gain, qComp(s.ftype, s.reso));
+    P('vol', this.vca.gain, s.vol);
+    P('m', this.master.gain, masterGain(s.master));
+
+    // 変調のもとの設定
+    for (let i = 0; i < 4; i++) {
+      const L = s.src[i];
+      const key = `${L.on}|${L.wave}|${L.rate}|${L.level}`;
+      if (this.sk[i] !== key) {
+        this.sk[i] = key;
+        this.modSend({ type: 'src', i, on: L.on, wave: Math.max(0, LFO_WAVES.indexOf(L.wave)), rate: L.rate, level: L.level });
+      }
+    }
+    // 変調どうしのケーブル（ワークレットの中で計算）
+    const list = s.cables.filter(c => DSTS[c.d].code !== undefined).map(c => [c.s, DSTS[c.d].code, c.depth]);
+    const pk = JSON.stringify(list);
+    if (pk !== this.pk) { this.pk = pk; this.modSend({ type: 'patch', list }); }
+    // 音へのケーブル（ケーブル1本 = GainNode 1つ）
+    const live = new Set();
+    for (const c of s.cables) {
+      const D = DSTS[c.d];
+      if (D.scale === undefined) continue;
+      const key = c.s + '|' + c.d;
+      live.add(key);
+      let g = this.cg.get(key);
+      if (!g) {
+        g = this.ctx.createGain(); g.gain.value = 0;
+        this.modOut.connect(g, c.s, 0);
+        g.connect(this.dstNode[c.d]);
+        this.cg.set(key, g);
+        this.last['cg' + key] = 0;
+      }
+      P('cg' + key, g.gain, c.depth * D.scale, 0.02);
+    }
+    for (const [key, g] of this.cg) {
+      if (live.has(key)) continue;
+      g.gain.setTargetAtTime(0, t, 0.01);
+      this.cg.delete(key);
+      delete this.last['cg' + key];
+      setTimeout(() => { try { g.disconnect(); } catch (_) { /* 無視 */ } }, 150);
+    }
+    // 波形・フィルターの種類を変えるときは一瞬だけ音を絞ってプツッを防ぐ
+    if (s.wave !== this.wave || s.ftype !== this.ftype) {
+      this.wave = s.wave; this.ftype = s.ftype;
+      this.duck.gain.setTargetAtTime(0, t, 0.004);
+      clearTimeout(this.duckT);
+      this.duckT = setTimeout(() => {
+        const now = this.ctx.currentTime;
+        this.osc.type = this.wave;
+        this.setFType(this.ftype);
+        this.duck.gain.setTargetAtTime(1, now, 0.008);
+      }, 30);
+    }
+  },
+
+  gate(on, tc) {
+    if (!this.ready) return;
+    this.env.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, tc);
+  },
+};
+
+/* =========================================================
+   状態の読み込み・保存・共有
+   ========================================================= */
+function sanitize(r) {
+  const s = clone(DEF);
+  if (!r || typeof r !== 'object') return s;
+  const num = (x, lo, hi, d) => (typeof x === 'number' && isFinite(x) ? clamp(x, lo, hi) : d);
+  if (r.mode === 'drone' || r.mode === 'kbd') s.mode = r.mode;
+  if (OSC_WAVES.includes(r.wave)) s.wave = r.wave;
+  if (FTYPES.includes(r.ftype)) s.ftype = r.ftype;
+  s.pitch = num(r.pitch, 40, 2000, s.pitch);
+  s.noise = num(r.noise, 0, 1, s.noise);
+  s.cutoff = num(r.cutoff, 40, 12000, s.cutoff);
+  s.reso = num(r.reso, 0, 1, s.reso);
+  s.vol = num(r.vol, 0, 1, s.vol);
+  s.decay = num(r.decay, 0.05, 3, s.decay);
+  // マスター音量は安全のため、保存・共有されたものは使わない（いつも30%から）
+  if (Array.isArray(r.src)) r.src.slice(0, 4).forEach((l, i) => {
+    if (!l || typeof l !== 'object') return;
+    const t = s.src[i];
+    t.on = !!l.on;
+    if (i < 3 && LFO_WAVES.includes(l.wave)) t.wave = l.wave;
+    t.rate = num(l.rate, 0.05, 1000, t.rate);
+    t.level = num(l.level, 0, 1, t.level);
+  });
+  if (Array.isArray(r.cables)) {
+    s.cables = [];
+    for (const c of r.cables.slice(0, MAX_CABLES)) {
+      if (!c || !Number.isInteger(c.s) || c.s < 0 || c.s > 3 || !DSTS[c.d]) continue;
+      if (s.cables.some(x => x.s === c.s && x.d === c.d)) continue;
+      s.cables.push({ s: c.s, d: c.d, depth: num(c.depth, 0, 1, 0.3) });
+    }
+  }
+  return s;
+}
+const STORE_KEY = 'namisynth.v2';
+function forShare(s) { const o = clone(s); delete o.master; return o; }
+function encodeState(s) {
+  const bytes = new TextEncoder().encode(JSON.stringify(forShare(s)));
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decodeState(str) {
+  let b = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (b.length % 4) b += '=';
+  const bin = atob(b);
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))));
+}
+function loadInitial() {
+  try {
+    const m = location.hash.match(/^#s=([A-Za-z0-9_\-]+)/);
+    if (m) return sanitize(decodeState(m[1]));
+  } catch (e) { console.warn('URLの設定を読めませんでした', e); }
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return sanitize(JSON.parse(raw));
+  } catch (e) { /* localStorage が使えなくても動く */ }
+  return clone(DEF);
+}
+let saveT = 0;
+function scheduleSave() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(forShare(S))); } catch (e) { /* 無視 */ }
+  }, 300);
+}
+
+let S = loadInitial();
+let playing = false;
+
+/* =========================================================
+   ノブ
+   ========================================================= */
+const SVGNS = 'http://www.w3.org/2000/svg';
+function polar(r, n) {
+  const a = (-135 + 270 * n) * Math.PI / 180;
+  return [50 + r * Math.sin(a), 50 - r * Math.cos(a)];
+}
+function arcD(r, n0, n1) {
+  if (n1 < n0) { const x = n0; n0 = n1; n1 = x; }
+  if (n1 - n0 < 0.004) n1 = n0 + 0.004;
+  const [x0, y0] = polar(r, n0), [x1, y1] = polar(r, n1);
+  const large = (n1 - n0) * 270 > 180 ? 1 : 0;
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+
+class Knob {
+  constructor(el, o) {
+    this.el = el; this.o = o; this.v = o.def;
+    el.classList.add('knob');
+    if (o.cls) el.classList.add(o.cls);
+    el.tabIndex = 0;
+    el.setAttribute('role', 'slider');
+    el.setAttribute('aria-label', o.label);
+    el.setAttribute('aria-valuemin', o.min);
+    el.setAttribute('aria-valuemax', o.max);
+    const ticks = (o.ticks || []).map(t => {
+      const n = this.toN(t), [x1, y1] = polar(35, n), [x2, y2] = polar(46, n);
+      return `<line class="k-tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    }).join('');
+    el.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true">
+      <circle class="k-ring" cx="50" cy="50" r="48"/>
+      <path class="k-track" d="${arcD(40, 0, 1)}"/>
+      <path class="k-fill"/>
+      <g class="k-mods"></g>
+      <circle class="k-body" cx="50" cy="50" r="15"/>
+      ${ticks}
+      <line class="k-base" x1="50" y1="50" x2="50" y2="10"/>
+      <line class="k-cur" x1="50" y1="50" x2="50" y2="4" style="display:none"/>
+      <circle class="k-dotg" r="7.5" style="display:none"/>
+      <circle class="k-dot" r="4" style="display:none"/>
+    </svg><div class="k-label">${o.label}</div><div class="k-val"></div><div class="k-now"></div>`;
+    if (o.dst) el.insertAdjacentHTML('beforeend', `<span class="dj" data-dst="${o.dst}"></span>`);
+    this.svg = $('svg', el);
+    this.fillEl = $('.k-fill', el); this.baseEl = $('.k-base', el); this.curEl = $('.k-cur', el);
+    this.dotEl = $('.k-dot', el); this.dotgEl = $('.k-dotg', el);
+    this.valEl = $('.k-val', el); this.nowEl = $('.k-now', el);
+    const g = $('.k-mods', el);
+    this.modEls = [];
+    for (let i = 0; i < 4; i++) {
+      const pg = document.createElementNS(SVGNS, 'path'), pa = document.createElementNS(SVGNS, 'path');
+      pg.setAttribute('class', 'k-modg'); pa.setAttribute('class', 'k-mod');
+      pg.style.display = pa.style.display = 'none';
+      g.appendChild(pg); g.appendChild(pa);
+      this.modEls.push([pg, pa]);
+    }
+    this.modOn = false; this.nowT = ''; this.nowC = '';
+    this.bind();
+    this.render();
+  }
+  toN(v) { const o = this.o; return o.log ? Math.log(v / o.min) / Math.log(o.max / o.min) : (v - o.min) / (o.max - o.min); }
+  fromN(n) { const o = this.o; n = clamp(n); return o.log ? o.min * Math.pow(o.max / o.min, n) : o.min + n * (o.max - o.min); }
+  n() { return this.toN(this.v); }
+  set(v, fire) {
+    v = clamp(v, this.o.min, this.o.max);
+    if (v === this.v) return;
+    this.v = v;
+    this.render();
+    if (fire) { this.o.on(v); refresh(); }
+  }
+  setN(n, fire = true) { this.set(this.fromN(n), fire); }
+  render() {
+    const n = this.n();
+    const [x0, y0] = polar(5, n), [x1, y1] = polar(40, n);
+    this.baseEl.setAttribute('x1', x0); this.baseEl.setAttribute('y1', y0);
+    this.baseEl.setAttribute('x2', x1); this.baseEl.setAttribute('y2', y1);
+    if (n > 0.004) { this.fillEl.style.display = ''; this.fillEl.setAttribute('d', arcD(40, 0, n)); }
+    else this.fillEl.style.display = 'none';
+    const txt = this.o.fmt(this.v);
+    this.valEl.textContent = txt;
+    this.el.setAttribute('aria-valuenow', +this.v.toFixed(3));
+    this.el.setAttribute('aria-valuetext', txt.replace('\n', ''));
+  }
+  // 変調の表示：st = { arcs:[{lo,hi,color}], cur, color, fast, t } または null
+  drawMod(st) {
+    if (!st) {
+      if (this.modOn) {
+        this.modOn = false;
+        for (const [pg, pa] of this.modEls) pg.style.display = pa.style.display = 'none';
+        this.curEl.style.display = this.dotEl.style.display = this.dotgEl.style.display = 'none';
+      }
+      return;
+    }
+    this.modOn = true;
+    for (let k = 0; k < 4; k++) {
+      const [pg, pa] = this.modEls[k], m = st.arcs[k];
+      if (!m) { pg.style.display = pa.style.display = 'none'; continue; }
+      const d = arcD(33 - 4.5 * k, m.lo, m.hi);
+      pa.setAttribute('d', d); pa.style.stroke = m.color; pa.style.display = '';
+      pa.style.opacity = st.fast ? 1 : 0.6;
+      if (st.fast) {
+        pg.setAttribute('d', d); pg.style.stroke = m.color; pg.style.display = '';
+        pg.style.opacity = (0.28 + 0.14 * Math.sin(st.t * 0.008 + k)).toFixed(3);
+      } else pg.style.display = 'none';
+    }
+    if (st.fast) {
+      this.curEl.style.display = this.dotEl.style.display = this.dotgEl.style.display = 'none';
+    } else {
+      const [x, y] = polar(46, st.cur), [xs, ys] = polar(8, st.cur);
+      this.curEl.setAttribute('x1', xs); this.curEl.setAttribute('y1', ys);
+      this.curEl.setAttribute('x2', x); this.curEl.setAttribute('y2', y);
+      this.curEl.style.stroke = st.color;
+      this.dotEl.setAttribute('cx', x); this.dotEl.setAttribute('cy', y); this.dotEl.style.fill = st.color;
+      this.dotgEl.setAttribute('cx', x); this.dotgEl.setAttribute('cy', y); this.dotgEl.style.fill = st.color;
+      this.dotgEl.style.opacity = 0.35;
+      this.curEl.style.display = this.dotEl.style.display = this.dotgEl.style.display = '';
+    }
+  }
+  setNow(txt, color) {
+    if (txt !== this.nowT) { this.nowT = txt; this.nowEl.textContent = txt; }
+    if (color !== this.nowC) { this.nowC = color; this.nowEl.style.color = color || ''; }
+  }
+  bind() {
+    const svg = this.svg, el = this.el;
+    svg.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      el.focus({ preventScroll: true });
+      try { svg.setPointerCapture(e.pointerId); } catch (_) { /* 無視 */ }
+      this.drag = { y: e.clientY };
+      el.classList.add('drag');
+    });
+    svg.addEventListener('pointermove', e => {
+      if (!this.drag) return;
+      const dy = this.drag.y - e.clientY;
+      this.drag.y = e.clientY;
+      if (dy) this.setN(this.n() + dy / (e.shiftKey ? 900 : 180));
+    });
+    const end = () => { this.drag = null; el.classList.remove('drag'); };
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', end);
+    svg.addEventListener('lostpointercapture', end);
+    svg.addEventListener('dblclick', () => this.set(this.o.def, true));
+    el.addEventListener('wheel', e => {
+      e.preventDefault();
+      this.setN(this.n() - e.deltaY * (e.shiftKey ? 0.0003 : 0.0015));
+    }, { passive: false });
+    el.addEventListener('keydown', e => {
+      const st = e.shiftKey ? 0.002 : 0.01;
+      let n = this.n();
+      switch (e.key) {
+        case 'ArrowUp': case 'ArrowRight': n += st; break;
+        case 'ArrowDown': case 'ArrowLeft': n -= st; break;
+        case 'PageUp': n += 0.1; break;
+        case 'PageDown': n -= 0.1; break;
+        case 'Home': n = 0; break;
+        case 'End': n = 1; break;
+        default: return;
+      }
+      e.preventDefault(); e.stopPropagation();
+      this.setN(n);
+    });
+  }
+}
+
+/* =========================================================
+   画面づくり
+   ========================================================= */
+const K = { rate: [], level: [] };
+const mk = (id, o) => (K[id] = new Knob($('#k-' + id), o));
+mk('pitch', { label: '高さ', dst: 'pitch', min: 40, max: 2000, log: true, def: DEF.pitch, fmt: v => `${fmtHz(v)}（${noteName(v)}）`, on: v => { S.pitch = v; } });
+mk('noise', { label: 'ノイズ', dst: 'noise', min: 0, max: 1, def: DEF.noise, fmt: pct, on: v => { S.noise = v; } });
+mk('cutoff', { label: 'カットオフ', dst: 'cutoff', min: 40, max: 12000, log: true, def: DEF.cutoff, fmt: fmtHz, on: v => { S.cutoff = v; } });
+mk('reso', { label: 'レゾナンス', dst: 'reso', min: 0, max: 1, def: DEF.reso, fmt: pct, on: v => { S.reso = v; } });
+mk('vol', { label: '音量', dst: 'amp', min: 0, max: 1, def: DEF.vol, fmt: pct, on: v => { S.vol = v; } });
+mk('decay', { label: '減衰', min: 0.05, max: 3, log: true, def: DEF.decay, fmt: v => v.toFixed(2) + '秒', on: v => { S.decay = v; } });
+mk('master', { label: 'マスター音量', cls: 'sm', min: 0, max: 1, def: DEF.master, fmt: pct, on: v => { S.master = v; } });
+K.decay.el.classList.add('kbd-only');
+
+$('#osc-waves').innerHTML = OSC_WAVES.map(w => `<button data-v="${w}" aria-label="${WAVE_JA[w]}">${icon(w)}${WAVE_JA[w]}</button>`).join('');
+$('#f-types').innerHTML = FTYPES.map(f => `<button data-v="${f}" aria-label="${FT_JA[f]}">${icon(f)}${FT_JA[f]}</button>`).join('');
+const onSeg = (el, fn) => el.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b && el.contains(b)) fn(b.dataset.v);
+});
+const updSeg = (el, v) => $$('button', el).forEach(b => {
+  const on = b.dataset.v === v;
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', on);
+});
+onSeg($('#osc-waves'), v => { S.wave = v; refresh(); });
+onSeg($('#f-types'), v => { S.ftype = v; refresh(); });
+onSeg($('#mode'), v => setMode(v));
+
+// LFO・S&H パネル
+const TIP_LFO = 'ゆっくりした波で、つないだつまみを自動で回す。出力 ● から、つまみの ◎ へドラッグしてつなぐ';
+const TIP_SH = 'クロックのたびに入力の値を拾って、次まで止めておく（階段のような変化）。入力がなければランダム';
+const srcEls = [];
+for (let i = 0; i < 4; i++) {
+  const isSH = i === SH;
+  const el = document.createElement('div');
+  el.className = 'lfo';
+  el.style.setProperty('--c', COLORS[i]);
+  el.style.setProperty('--cb', COLOR_BG[i]);
+  el.innerHTML = `
+    <div class="lfo-head"><h2>${SRC_JA[i]}</h2>
+      <span class="help${i >= 2 ? ' r' : ''}" tabindex="0" data-tip="${isSH ? TIP_SH : TIP_LFO}">?</span>
+      <span class="outl">出力</span><span class="outj" title="ドラッグして、つまみの ◎ につなぐ"></span>
+      <button class="toggle" aria-pressed="false" aria-label="${SRC_JA[i]} オン/オフ"><span class="sw"></span><span class="tt">オフ</span></button>
+    </div>
+    <div class="lfo-body"><div class="kr"></div><div class="kl"></div><canvas class="mini"></canvas></div>
+    ${isSH
+      ? `<div class="row"><span class="rl">入力</span><span class="dj inline" data-dst="shin"></span><span class="jn" data-n="shin"></span>
+           <span class="rl" style="margin-left:4px">クロック</span><span class="dj inline" data-dst="shclk"></span><span class="jn" data-n="shclk"></span></div>`
+      : `<div class="row"><span class="rl">波形</span><div class="seg waves">${LFO_WAVES.map(w => `<button data-v="${w}" title="${WAVE_JA[w]}" aria-label="${WAVE_JA[w]}">${icon(w)}</button>`).join('')}</div></div>`}
+    <div class="row"><span class="rl">つなぎ先</span><div class="conns"></div></div>`;
+  $('#lfos').appendChild(el);
+  srcEls.push(el);
+  $('.toggle', el).addEventListener('click', () => { S.src[i].on = !S.src[i].on; refresh(); });
+  $('.outj', el).addEventListener('pointerdown', e => startDrag(e, i, null));
+  if (!isSH) onSeg($('.waves', el), v => { S.src[i].wave = v; refresh(); });
+  $('.conns', el).addEventListener('click', e => {
+    const b = e.target.closest('.chip');
+    if (b && S.cables[+b.dataset.k]) openPop(S.cables[+b.dataset.k]);
+  });
+  K.rate[i] = new Knob($('.kr', el), { label: '速さ', dst: 'rate' + i, min: 0.05, max: 1000, log: true, def: DEF.src[i].rate, ticks: [AUDIO_HZ], fmt: fmtRate, on: v => { S.src[i].rate = v; } });
+  K.level[i] = new Knob($('.kl', el), { label: '出力', dst: 'lvl' + i, min: 0, max: 1, def: 1, fmt: pct, on: v => { S.src[i].level = v; } });
+}
+const minis = srcEls.map(el => $('.mini', el));
+const KNOB_OF = { pitch: K.pitch, noise: K.noise, cutoff: K.cutoff, reso: K.reso, amp: K.vol };
+for (let i = 0; i < 4; i++) { KNOB_OF['rate' + i] = K.rate[i]; KNOB_OF['lvl' + i] = K.level[i]; }
+
+// 鍵盤
+const KEY_CHARS = 'awsedftgyhujk';
+const KEY_NAMES = ['ド', 'ド♯', 'レ', 'レ♯', 'ミ', 'ファ', 'ファ♯', 'ソ', 'ソ♯', 'ラ', 'ラ♯', 'シ', 'ド'];
+const keyEls = [];
+(() => {
+  const wrap = $('#keys');
+  let wi = 0;
+  for (let i = 0; i < 13; i++) {
+    const black = [1, 3, 6, 8, 10].includes(i);
+    const k = document.createElement('div');
+    k.className = 'key' + (black ? ' b' : '');
+    k.style.left = (black ? wi * 54 - 17 : wi * 54) + 'px';
+    if (!black) wi++;
+    k.innerHTML = `${KEY_NAMES[i]}<small>${KEY_CHARS[i].toUpperCase()}</small>`;
+    k.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      try { k.setPointerCapture(e.pointerId); } catch (_) { /* 無視 */ }
+      noteOn(i);
+    });
+    const up = () => noteOff(i);
+    k.addEventListener('pointerup', up);
+    k.addEventListener('pointercancel', up);
+    k.addEventListener('lostpointercapture', up);
+    wrap.appendChild(k);
+    keyEls.push(k);
+  }
+})();
+
+// 講師用
+const params = new URLSearchParams(location.search);
+if (params.get('teacher') === '1') {
+  document.body.classList.add('teacher');
+  const sel = $('#preset');
+  sel.innerHTML = '<option value="">講師用プリセット…</option>' + Object.keys(PRESETS).map(k => `<option>${k}</option>`).join('');
+  sel.addEventListener('change', () => { if (sel.value) applyPreset(sel.value); sel.value = ''; sel.blur(); });
+}
+
+/* =========================================================
+   パッチケーブル
+   ========================================================= */
+const cableSvg = $('#cables');
+const pool = [];   // ケーブルの見た目（path・光・プラグ）を使い回す
+const plugMap = [];
+function cableEl(k) {
+  while (pool.length <= k) {
+    const idx = pool.length;
+    const glow = document.createElementNS(SVGNS, 'path');
+    const p = document.createElementNS(SVGNS, 'path');
+    const plug = document.createElementNS(SVGNS, 'circle');
+    plug.setAttribute('class', 'plug'); plug.setAttribute('r', 6.5);
+    plug.setAttribute('stroke', '#11112a'); plug.setAttribute('stroke-width', 2.5);
+    plug.addEventListener('pointerdown', e => { const c = plugMap[idx]; if (c) startDrag(e, c.s, c); });
+    cableSvg.appendChild(glow); cableSvg.appendChild(p); cableSvg.appendChild(plug);
+    pool.push({ glow, p, plug });
+  }
+  return pool[k];
+}
+function plugGroups() {
+  const g = {};
+  for (const c of S.cables) {
+    if (drag && drag.moved && drag.cable === c) continue;
+    (g[c.d] = g[c.d] || []).push(c);
+  }
+  return g;
+}
+function plugPos(c, groups) {
+  const base = G.dst[c.d];
+  const list = (groups || plugGroups())[c.d] || [c];
+  const i = Math.max(0, list.indexOf(c)), n = list.length;
+  return { x: base.x + (i - (n - 1) / 2) * 13, y: base.y };
+}
+function cablePath(a, b) {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const sag = Math.min(120, 25 + dist * 0.22);
+  return `M${a.x.toFixed(1)} ${a.y.toFixed(1)} C${a.x.toFixed(1)} ${(a.y + sag).toFixed(1)} ${b.x.toFixed(1)} ${(b.y + sag).toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+}
+
+// ドラッグでつなぐ・外す・つなぎ替える
+let drag = null;
+const appPt = e => { const r = app.getBoundingClientRect(); return { x: (e.clientX - r.left) / UI, y: (e.clientY - r.top) / UI }; };
+function nearestJack(p) {
+  let best = null, bd = 30;
+  for (const d in G.dst) {
+    const q = G.dst[d], dd = Math.hypot(q.x - p.x, q.y - p.y);
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  return best;
+}
+function setHot(d) {
+  if (!drag || drag.hot === d) return;
+  $$('.dj.hot').forEach(j => j.classList.remove('hot'));
+  drag.hot = d;
+  if (d) $$(`.dj[data-dst="${d}"]`).forEach(j => j.classList.add('hot'));
+}
+function startDrag(e, s, cable) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  closePop();
+  const p = appPt(e);
+  drag = { s, cable, p, start: p, moved: false, hot: null };
+  document.body.classList.add('patching');
+  document.body.style.setProperty('--hot', COLORS[s]);
+}
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  drag.p = appPt(e);
+  if (!drag.moved && Math.hypot(drag.p.x - drag.start.x, drag.p.y - drag.start.y) > 5) drag.moved = true;
+  setHot(drag.moved ? nearestJack(drag.p) : null);
+});
+window.addEventListener('pointerup', () => { if (drag) finishDrag(); });
+window.addEventListener('pointercancel', () => { if (drag) { setHot(null); drag = null; document.body.classList.remove('patching'); } });
+function finishDrag() {
+  const d = { ...drag };   // setHot(null) で drag.hot が消える前に写しておく
+  setHot(null);
+  drag = null;
+  document.body.classList.remove('patching');
+  if (d.cable) {
+    if (!d.moved) { openPop(d.cable); return; }
+    if (d.hot) {
+      if (d.hot !== d.cable.d) {
+        const dup = S.cables.find(c => c !== d.cable && c.s === d.cable.s && c.d === d.hot);
+        if (dup) { removeCable(d.cable); refresh(); openPop(dup); return; }
+        d.cable.d = d.hot;
+      }
+      refresh(); openPop(d.cable);
+    } else {
+      removeCable(d.cable); refresh();
+      toast('ケーブルを外しました');
+    }
+    return;
+  }
+  if (!d.moved) { toast('出力 ● をドラッグして、つまみの ◎ まで運んでね'); return; }
+  if (!d.hot) return;
+  let c = S.cables.find(x => x.s === d.s && x.d === d.hot);
+  if (!c) {
+    if (S.cables.length >= MAX_CABLES) { toast('ケーブルが多すぎます。どれかを外してください'); return; }
+    c = { s: d.s, d: d.hot, depth: 0.3 };
+    S.cables.push(c);
+    if (!S.src[d.s].on) S.src[d.s].on = true;
+  }
+  refresh();
+  openPop(c);
+}
+function removeCable(c) {
+  const i = S.cables.indexOf(c);
+  if (i >= 0) S.cables.splice(i, 1);
+  if (popCable === c) closePop();
+}
+
+// ケーブルの深さを決めるポップアップ
+const pop = $('#pop');
+let popCable = null;
+K.cdepth = new Knob($('#k-cdepth'), {
+  label: '深さ', min: 0, max: 1, def: 0.3,
+  fmt: v => (popCable ? DSTS[popCable.d].fmt(v) : pct(v)),
+  on: v => { if (popCable) popCable.depth = v; },
+});
+function openPop(c) {
+  popCable = c;
+  pop.hidden = false;
+  pop.style.setProperty('--c', COLORS[c.s]);
+  K.cdepth.el.style.setProperty('--c', COLORS[c.s]);
+  $('.pop-src', pop).textContent = SRC_JA[c.s];
+  $('.pop-dst', pop).textContent = DSTS[c.d].ja;
+  K.cdepth.v = NaN;
+  K.cdepth.set(c.depth, false);
+  positionPop();
+}
+function positionPop() {
+  if (!popCable || !G) return;
+  const pt = plugPos(popCable);
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let x = pt.x + 18, y = pt.y - 40;
+  if (x + w > app.offsetWidth - 6) x = pt.x - 18 - w;
+  y = clamp(y, 6, app.offsetHeight - h - 6);
+  pop.style.left = x + 'px'; pop.style.top = y + 'px';
+}
+function closePop() { popCable = null; pop.hidden = true; }
+$('#pop-del').addEventListener('click', () => { if (popCable) { removeCable(popCable); refresh(); toast('ケーブルを外しました'); } });
+$('#pop-close').addEventListener('click', closePop);
+document.addEventListener('pointerdown', e => {
+  if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.plug, .chip, .outj')) closePop();
+}, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+
+/* =========================================================
+   状態 → 画面・音
+   ========================================================= */
+function updateUI() {
+  K.pitch.set(S.pitch); K.noise.set(S.noise); K.cutoff.set(S.cutoff); K.reso.set(S.reso);
+  K.vol.set(S.vol); K.decay.set(S.decay); K.master.set(S.master);
+  updSeg($('#osc-waves'), S.wave);
+  updSeg($('#f-types'), S.ftype);
+  updSeg($('#mode'), S.mode);
+  document.body.classList.toggle('mode-kbd', S.mode === 'kbd');
+  for (let i = 0; i < 4; i++) {
+    const L = S.src[i], el = srcEls[i];
+    K.rate[i].set(L.rate); K.level[i].set(L.level);
+    K.rate[i].el.classList.toggle('audio', L.rate >= AUDIO_HZ);
+    el.classList.toggle('off', !L.on);
+    const tg = $('.toggle', el);
+    tg.setAttribute('aria-pressed', L.on);
+    $('.tt', tg).textContent = L.on ? 'オン' : 'オフ';
+    if (i !== SH) updSeg($('.waves', el), L.wave);
+    // つなぎ先の一覧
+    const mine = [];
+    S.cables.forEach((c, k) => { if (c.s === i) mine.push([c, k]); });
+    const sig = mine.map(([c, k]) => `${k}:${c.d}:${c.depth > 0}`).join(',');
+    const conns = $('.conns', el);
+    if (conns.dataset.sig !== sig) {
+      conns.dataset.sig = sig;
+      conns.innerHTML = mine.length
+        ? mine.map(([c, k]) => `<button class="chip${c.depth > 0 ? '' : ' zero'}" data-k="${k}" title="クリックで深さを変える">${DSTS[c.d].short}</button>`).join('')
+        : '<span class="hint">出力 ● から つまみの ◎ へドラッグ</span>';
+    }
+  }
+  // S&H の入力・クロック
+  const names = d => S.cables.filter(c => c.d === d).map(c => SRC_JA[c.s]).join('＋');
+  const inN = names('shin'), clkN = names('shclk');
+  const jIn = $('.jn[data-n="shin"]'), jClk = $('.jn[data-n="shclk"]');
+  jIn.textContent = inN ? '← ' + inN : 'ランダム'; jIn.classList.toggle('on', !!inN);
+  jClk.textContent = clkN ? '← ' + clkN : '速さのつまみ'; jClk.classList.toggle('on', !!clkN);
+  K.rate[SH].el.classList.toggle('idle', !!clkN);
+
+  if (popCable && !S.cables.includes(popCable)) closePop();
+  if (popCable) { K.cdepth.render(); $('.pop-dst', pop).textContent = DSTS[popCable.d].ja; }
+
+  const pb = $('#play');
+  if (S.mode === 'kbd') { pb.disabled = true; pb.textContent = '鍵盤で弾いてね ↓'; pb.classList.remove('playing'); }
+  else { pb.disabled = false; pb.textContent = playing ? '■ 止める' : '▶ 鳴らす'; pb.classList.toggle('playing', playing); }
+}
+function refresh() {
+  updateUI();
+  A.apply(S);
+  scheduleSave();
+}
+
+function setMode(m) {
+  if (m === S.mode) return;
+  S.mode = m;
+  allNotesOff();
+  if (playing) { playing = false; A.gate(false, 0.02); }
+  refresh();
+  requestAnimationFrame(layout);
+}
+
+$('#play').addEventListener('click', () => {
+  if (!A.ready || S.mode !== 'drone') return;
+  playing = !playing;
+  A.gate(playing, 0.02);
+  updateUI();
+});
+
+$('#reset').addEventListener('click', () => {
+  const mode = S.mode;
+  closePop();
+  S = clone(DEF);
+  S.mode = mode;
+  if (A.ready) A.modSend({ type: 'reset' });
+  refresh();
+  toast('すべてのつまみとケーブルを初期の状態に戻しました');
+});
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  closePop();
+  const s = clone(DEF);
+  s.master = S.master;
+  s.mode = S.mode;
+  for (const k of Object.keys(p)) if (!['src', 'cables', 'mode'].includes(k)) s[k] = p[k];
+  for (const i of Object.keys(p.src || {})) Object.assign(s.src[i], p.src[i]);
+  s.cables = (p.cables || []).map(([a, d, depth]) => ({ s: a, d, depth }));
+  S = s;
+  const newMode = p.mode || 'drone';
+  if (newMode !== S.mode) setMode(newMode);
+  if (A.ready) A.modSend({ type: 'reset' });
+  refresh();
+  toast(`プリセット「${name}」` + (S.mode === 'kbd' ? '（鍵盤で弾いてください）' : ''));
+}
+
+$('#copy').addEventListener('click', async () => {
+  const enc = encodeState(S);
+  const url = location.href.split('#')[0].split('?')[0] + '#s=' + enc;
+  try { history.replaceState(null, '', location.pathname + location.search + '#s=' + enc); } catch (_) { /* 無視 */ }
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch (_) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch (__) { ok = false; }
+  }
+  toast(ok ? '設定をコピーしました。URLを貼りつけると同じ音になります' : 'コピーできませんでした。アドレスバーのURLを使ってください');
+});
+
+let toastT = 0;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* =========================================================
+   鍵盤
+   ========================================================= */
+const held = [];
+function noteOn(i) {
+  if (!A.ready || S.mode !== 'kbd') return;
+  const idx = held.indexOf(i);
+  if (idx >= 0) held.splice(idx, 1);
+  held.push(i);
+  playNote(i);
+  A.gate(true, 0.004);
+  keyEls[i].classList.add('on');
+}
+function playNote(i) {
+  A.pitchTc = 0.002;
+  K.pitch.set(261.6256 * Math.pow(2, i / 12), true);
+  A.pitchTc = 0.012;
+}
+function noteOff(i) {
+  const idx = held.indexOf(i);
+  if (idx < 0) return;
+  held.splice(idx, 1);
+  keyEls[i].classList.remove('on');
+  if (held.length) playNote(held[held.length - 1]);
+  else A.gate(false, S.decay / 5);
+}
+function allNotesOff() {
+  while (held.length) keyEls[held.pop()].classList.remove('on');
+  if (A.ready && S.mode === 'kbd') A.gate(false, S.decay / 5);
+}
+document.addEventListener('keydown', e => {
+  if (S.mode !== 'kbd' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  const i = KEY_CHARS.indexOf(e.key.toLowerCase());
+  if (i < 0) return;
+  e.preventDefault();
+  noteOn(i);
+});
+document.addEventListener('keyup', e => {
+  const i = KEY_CHARS.indexOf(e.key.toLowerCase());
+  if (i >= 0) noteOff(i);
+});
+window.addEventListener('blur', allNotesOff);
+
+/* =========================================================
+   レイアウト（画面サイズに合わせて全体を拡大縮小）
+   ========================================================= */
+const app = $('#app');
+let UI = 1, PR = 1, G = null;
+function layout() {
+  app.style.transform = 'none';
+  const w = app.offsetWidth, h = app.offsetHeight;
+  UI = Math.max(0.4, Math.min(innerWidth / w, innerHeight / h, 1.6));
+  app.style.transform = `scale(${UI})`;
+  app.style.left = Math.max(0, (innerWidth - w * UI) / 2) + 'px';
+  app.style.top = Math.max(0, (innerHeight - h * UI) / 2) + 'px';
+  PR = (window.devicePixelRatio || 1) * UI;
+  for (const cv of [$('#scope'), $('#spec'), ...minis]) {
+    const W = Math.max(1, Math.round(cv.clientWidth * PR)), H = Math.max(1, Math.round(cv.clientHeight * PR));
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  }
+  cableSvg.setAttribute('width', w); cableSvg.setAttribute('height', h);
+  cableSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const ar = app.getBoundingClientRect();
+  const P = el => { const r = el.getBoundingClientRect(); return { x: (r.left + r.width / 2 - ar.left) / UI, y: (r.top + r.height / 2 - ar.top) / UI }; };
+  G = { src: srcEls.map(el => P($('.outj', el))), dst: {} };
+  for (const j of $$('.dj')) G.dst[j.dataset.dst] = P(j);
+  positionPop();
+}
+window.addEventListener('resize', layout);
+
+/* =========================================================
+   アニメーション
+   ========================================================= */
+let frameN = 0;
+const shRoll = new Float32Array(140);
+let shIdx = 0;
+
+function nowText(d, sum) {
+  switch (d) {
+    case 'pitch': return fmtHz(S.pitch * Math.pow(2, 2 * sum));
+    case 'noise': return pct(clamp(S.noise + sum));
+    case 'cutoff': return fmtHz(clamp(S.cutoff * Math.pow(2, 5 * sum), 1, 22050));
+    case 'reso': return pct(clamp(S.reso + sum));
+    case 'amp': return pct(Math.max(0, S.vol * (1 + sum)));
+  }
+  return '';
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  if (document.hidden || !G) return;
+  frameN++;
+  const now = performance.now();
+
+  // 変調のもとの、いまの値（届いた値から、次が届くまでの間を補う）
+  const vals = [0, 0, 0, 0], phs = [0, 0, 0, 0], fast = [false, false, false, false];
+  for (let i = 0; i < 4; i++) {
+    const L = S.src[i], R = LV[i];
+    phs[i] = R.phase;
+    if (!A.ready || !L.on) continue;
+    fast[i] = R.rate > FAST_HZ;
+    if (i === SH) { vals[i] = R.val; continue; }
+    const p = (R.phase + R.rate * Math.min((now - R.t) / 1000, 0.1)) % 1;
+    phs[i] = p;
+    vals[i] = L.wave === 'sh' ? R.val : waveFn(L.wave, p) * R.lvl;
+  }
+  if (A.ready) { shRoll[shIdx] = vals[SH]; shIdx = (shIdx + 1) % shRoll.length; }
+
+  // 行き先ごとの合計
+  const M = {};
+  for (const d in DSTS) M[d] = { sum: 0, fast: false, arcs: [], best: -1, bestD: 0 };
+  for (const c of S.cables) {
+    if (!S.src[c.s].on || c.depth <= 0) continue;
+    const m = M[c.d];
+    m.sum += c.depth * vals[c.s];
+    if (fast[c.s]) m.fast = true;
+    m.arcs.push({ s: c.s, d: c.depth });
+    if (c.depth > m.bestD) { m.bestD = c.depth; m.best = c.s; }
+  }
+
+  // 動くノブ
+  const textTick = frameN % 6 === 0;
+  for (const d in KNOB_OF) {
+    const m = M[d], k = KNOB_OF[d];
+    if (!m.arcs.length || !A.ready) { k.drawMod(null); k.setNow('', ''); continue; }
+    const bn = k.n(), rn = rangeN(d);
+    const arcs = m.arcs.map(a => {
+      let lo, hi;
+      if (d === 'amp') { lo = S.vol * (1 - a.d); hi = S.vol * (1 + a.d); }
+      else { lo = bn - rn * a.d; hi = bn + rn * a.d; }
+      return { lo: clamp(lo), hi: clamp(hi), color: COLORS[a.s] };
+    });
+    const cur = d === 'amp' ? clamp(S.vol * (1 + m.sum)) : clamp(bn + m.sum * rn);
+    k.drawMod({ arcs, cur, color: COLORS[m.best], fast: m.fast, t: now });
+    if (m.fast) k.setNow('速すぎて\n目では追えない', '');
+    else if (textTick || k.nowT.indexOf('いま') < 0) k.setNow('いま ' + nowText(d, m.sum), COLORS[m.best]);
+  }
+
+  for (let i = 0; i < 3; i++) drawMini(i, phs[i], vals[i], fast[i]);
+  drawMiniSH(fast[SH]);
+  drawCables(vals, fast);
+  if (A.ready) {
+    drawScope();
+    drawSpec(clamp(S.cutoff * Math.pow(2, 5 * M.cutoff.sum), 10, A.ctx.sampleRate / 2 - 100), clamp(S.reso + M.reso.sum), M);
+  }
+}
+
+const FONT = (w, px) => `${w} ${px}px -apple-system, "Hiragino Sans", sans-serif`;
+function miniFrame(i) {
+  const cv = minis[i], g = cv.getContext('2d'), W = cv.width, H = cv.height, R = PR;
+  g.fillStyle = '#1b1b33'; g.fillRect(0, 0, W, H);
+  const pad = 8 * R, top = 22 * R, bot = H - 18 * R;
+  const mid = (top + bot) / 2, amp = (bot - top) / 2;
+  g.strokeStyle = '#2E2E4D'; g.lineWidth = R;
+  g.beginPath(); g.moveTo(pad, mid); g.lineTo(W - pad, mid); g.stroke();
+  return { g, W, H, R, pad, X: p => pad + p * (W - 2 * pad), Y: v => mid - v * amp };
+}
+function miniLabels(f, title, on, fast, rate) {
+  const { g, W, H, R, pad } = f;
+  g.textBaseline = 'top'; g.textAlign = 'left';
+  if (on && rate >= AUDIO_HZ) {
+    g.font = FONT(800, 11 * R); g.fillStyle = '#fff'; g.shadowColor = '#fff'; g.shadowBlur = 8 * R;
+    g.fillText('音の速さ', pad - 2 * R, 5 * R);
+    g.shadowBlur = 0;
+  } else {
+    g.font = FONT(600, 10.5 * R); g.fillStyle = '#8A8AA3';
+    g.fillText(title, pad - 2 * R, 5 * R);
+  }
+  if (on && fast) {
+    g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillStyle = '#c8c8dc'; g.font = FONT(600, 10 * R);
+    g.fillText('目では追えない', W / 2, H - 3 * R);
+  }
+}
+function strokeWave(f, col, on, fast) {
+  const { g, R } = f;
+  g.strokeStyle = col; g.lineJoin = 'round'; g.lineCap = 'round';
+  g.globalAlpha = !on ? 0.35 : fast ? 1 : 0.55;
+  g.lineWidth = (fast && on ? 3 : 2) * R;
+  if (fast && on) { g.shadowColor = col; g.shadowBlur = 12 * R; }
+  g.stroke();
+  g.shadowBlur = 0; g.globalAlpha = 1;
+}
+function drawDot(f, x, y, col) {
+  const { g, R } = f;
+  g.fillStyle = col; g.globalAlpha = 0.3;
+  g.beginPath(); g.arc(x, y, 9 * R, 0, Math.PI * 2); g.fill();
+  g.globalAlpha = 1;
+  g.beginPath(); g.arc(x, y, 4.5 * R, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 1.5 * R; g.stroke();
+}
+function drawMini(i, ph, val, fast) {
+  const f = miniFrame(i), { g, X, Y } = f;
+  const L = S.src[i], col = COLORS[i], on = L.on && A.ready;
+  const a = on ? LV[i].lvl : 1;   // 出力のつまみに合わせて波の大きさも変わる
+  g.beginPath();
+  if (L.wave === 'sh') {
+    const h = LV[i].hist, n = h.length;
+    for (let k = 0; k < n; k++) {
+      const y = Y(h[k]);
+      if (k) g.lineTo(X(k / n), y); else g.moveTo(X(0), y);
+      g.lineTo(X((k + 1) / n), y);
+    }
+  } else if (L.wave === 'square') {
+    g.moveTo(X(0), Y(a)); g.lineTo(X(0.5), Y(a)); g.lineTo(X(0.5), Y(-a)); g.lineTo(X(1), Y(-a));
+  } else if (L.wave === 'sawtooth') {
+    g.moveTo(X(0), Y(-a)); g.lineTo(X(1), Y(a)); g.lineTo(X(1), Y(-a));
+  } else if (L.wave === 'triangle') {
+    g.moveTo(X(0), Y(0)); g.lineTo(X(0.25), Y(a)); g.lineTo(X(0.75), Y(-a)); g.lineTo(X(1), Y(0));
+  } else {
+    for (let k = 0; k <= 48; k++) { const p = k / 48; const y = Y(a * Math.sin(2 * Math.PI * p)); if (k) g.lineTo(X(p), y); else g.moveTo(X(p), y); }
+  }
+  strokeWave(f, col, on, fast);
+  if (on && !fast) {
+    const n = LV[i].hist.length;
+    drawDot(f, L.wave === 'sh' ? X((n - 1 + ph) / n) : X(ph), Y(val), col);
+  }
+  miniLabels(f, WAVE_JA[L.wave].replace('（ランダム）', ''), on, fast, LV[i].rate);
+}
+function drawMiniSH(fast) {
+  const f = miniFrame(SH), { g, X, Y } = f;
+  const on = S.src[SH].on && A.ready, col = COLORS[SH], n = shRoll.length;
+  // 直近の出力を、左（古い）から右（新しい）へ階段で描く
+  g.beginPath();
+  for (let k = 0; k < n; k++) {
+    const v = shRoll[(shIdx + k) % n], x = X(k / (n - 1)), y = Y(v);
+    if (k) { g.lineTo(x, Y(shRoll[(shIdx + k - 1) % n])); g.lineTo(x, y); } else g.moveTo(x, y);
+  }
+  strokeWave(f, col, on, fast);
+  if (on && !fast) drawDot(f, X(1), Y(shRoll[(shIdx + n - 1) % n]), col);
+  const hasIn = S.cables.some(c => c.d === 'shin');
+  miniLabels(f, hasIn ? '入力を拾う' : 'ランダム', on, fast, LV[SH].rate);
+}
+
+function drawCables(vals, fast) {
+  const groups = plugGroups();
+  let k = 0;
+  const show = (el, a, b, col, o) => {
+    const d = cablePath(a, b);
+    el.p.setAttribute('d', d); el.glow.setAttribute('d', d);
+    el.p.setAttribute('stroke', col); el.glow.setAttribute('stroke', col);
+    el.plug.setAttribute('fill', col);
+    el.plug.setAttribute('cx', b.x.toFixed(1)); el.plug.setAttribute('cy', b.y.toFixed(1));
+    el.p.style.display = el.plug.style.display = '';
+    if (o.dash) el.p.setAttribute('stroke-dasharray', '4 6'); else el.p.removeAttribute('stroke-dasharray');
+    el.p.setAttribute('stroke-width', o.w);
+    el.p.style.opacity = o.op.toFixed(3);
+    el.plug.style.opacity = o.plug;
+    if (o.glow > 0) { el.glow.style.display = ''; el.glow.setAttribute('stroke-width', o.w + 7); el.glow.style.opacity = o.glow.toFixed(3); }
+    else el.glow.style.display = 'none';
+  };
+  for (const c of S.cables) {
+    const el = cableEl(k);
+    plugMap[k] = c;
+    k++;
+    const a = G.src[c.s], col = COLORS[c.s];
+    if (drag && drag.moved && drag.cable === c) {
+      show(el, a, drag.hot ? G.dst[drag.hot] : drag.p, col, { w: 3.5, op: 0.95, plug: 1, glow: 0.2 });
+      continue;
+    }
+    const b = plugPos(c, groups), on = S.src[c.s].on;
+    if (!on) show(el, a, b, col, { w: 2, op: 0.22, plug: 0.5, glow: 0 });
+    else if (c.depth <= 0) show(el, a, b, col, { w: 2, op: 0.5, plug: 0.7, glow: 0, dash: true });
+    else {
+      const br = fast[c.s] ? 0.9 : 0.35 + 0.6 * clamp((vals[c.s] + 1) / 2);
+      show(el, a, b, col, { w: 2 + 2.5 * c.depth, op: br, plug: 1, glow: br * 0.25 });
+    }
+  }
+  if (drag && drag.moved && !drag.cable) {
+    const el = cableEl(k);
+    plugMap[k] = null;
+    k++;
+    show(el, G.src[drag.s], drag.hot ? G.dst[drag.hot] : drag.p, COLORS[drag.s], { w: 3.5, op: 0.95, plug: 1, glow: 0.2 });
+  }
+  for (; k < pool.length; k++) {
+    const el = pool[k];
+    plugMap[k] = null;
+    el.p.style.display = el.glow.style.display = el.plug.style.display = 'none';
+  }
+}
+
+function drawScope() {
+  const cv = $('#scope'), g = cv.getContext('2d'), W = cv.width, H = cv.height, R = PR;
+  const buf = A.scopeBuf;
+  A.anaScope.getFloatTimeDomainData(buf);
+  g.fillStyle = '#1b1b33'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#2E2E4D'; g.lineWidth = R;
+  g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  // トリガー：上向きに0をまたぐところから描く
+  const N = 1024;
+  let start = 0, peak = 0;
+  for (let i = 1; i < buf.length - N; i++) { if (buf[i - 1] < 0 && buf[i] >= 0) { start = i; break; } }
+  g.beginPath();
+  for (let k = 0; k < N; k++) {
+    const v = buf[start + k];
+    if (Math.abs(v) > peak) peak = Math.abs(v);
+    const x = (k / (N - 1)) * W, y = H / 2 - clamp(v, -1.2, 1.2) * H * 0.4;
+    if (k) g.lineTo(x, y); else g.moveTo(x, y);
+  }
+  g.strokeStyle = '#fff'; g.lineWidth = 2 * R; g.lineJoin = 'round';
+  g.stroke();
+  if (peak < 1e-4) {
+    g.fillStyle = '#8A8AA3'; g.font = FONT(600, 12 * R);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(S.mode === 'kbd' ? '鍵盤を弾くと波が見えます' : '「▶ 鳴らす」を押すと波が見えます', W / 2, H / 2 - 14 * R);
+  }
+}
+
+let specF = null, specMag = null, specPh = null;
+function filterCurve(type, f, r) {
+  const d = A.disp;
+  d.type = type; d.frequency.value = f; d.Q.value = qParam(type, r);
+  d.getFrequencyResponse(specF, specMag, specPh);
+  return specMag;
+}
+function drawSpec(cut, rCur, M) {
+  const cv = $('#spec'), g = cv.getContext('2d'), W = cv.width, H = cv.height, R = PR;
+  const bot = H - 16 * R;   // 下に目盛り
+  const xOf = f => (Math.log(f / 20) / Math.log(1000)) * W;
+  g.fillStyle = '#1b1b33'; g.fillRect(0, 0, W, H);
+  // 目盛り
+  g.font = FONT(600, 10 * R);
+  g.textBaseline = 'bottom'; g.fillStyle = '#8A8AA3';
+  for (const [f, lb] of [[50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1000'], [2000, '2000'], [5000, '5000'], [10000, '10000 Hz']]) {
+    const x = xOf(f);
+    g.strokeStyle = '#26264a'; g.lineWidth = R;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, bot); g.stroke();
+    g.textAlign = f === 10000 ? 'right' : 'center';
+    g.fillText(lb, f === 10000 ? Math.min(W - 2 * R, x + 30 * R) : x, H - 2 * R);
+  }
+  g.textAlign = 'left'; g.fillText('低い', 3 * R, H - 2 * R);
+
+  // 成分（スペクトル）
+  const fb = A.specBuf;
+  A.anaSpec.getFloatFrequencyData(fb);
+  const binHz = A.ctx.sampleRate / A.anaSpec.fftSize;
+  const step = Math.max(1, Math.round(R));
+  const dbY = db => bot - (clamp(db, -100, -10) + 100) / 90 * bot;
+  g.beginPath(); g.moveTo(0, bot);
+  for (let x = 0; x <= W; x += step) {
+    const f0 = 20 * Math.pow(1000, x / W), f1 = 20 * Math.pow(1000, (x + step) / W);
+    const b0 = f0 / binHz, b1 = f1 / binHz;
+    let m;
+    if (b1 - b0 < 1) {
+      const i0 = Math.floor(b0), fr = b0 - i0;
+      const a = fb[i0], b = fb[i0 + 1];
+      m = isFinite(a) && isFinite(b) ? a + (b - a) * fr : -200;
+    } else {
+      m = -200;
+      for (let k = Math.floor(b0); k < Math.ceil(b1) && k < fb.length; k++) if (fb[k] > m) m = fb[k];
+    }
+    g.lineTo(x, dbY(m));
+  }
+  g.lineTo(W, bot); g.closePath();
+  const grd = g.createLinearGradient(0, 0, 0, bot);
+  grd.addColorStop(0, 'rgba(210,210,235,.85)'); grd.addColorStop(1, 'rgba(138,138,163,.25)');
+  g.fillStyle = grd; g.fill();
+
+  // フィルター曲線
+  const n = Math.max(2, Math.round(W / (2 * R)));
+  if (!specF || specF.length !== n) {
+    specF = new Float32Array(n); specMag = new Float32Array(n); specPh = new Float32Array(n);
+    for (let k = 0; k < n; k++) specF[k] = 20 * Math.pow(1000, k / (n - 1));
+  }
+  const curveY = db => (24 - clamp(db, -48, 24)) / 72 * bot;
+  const drawCurve = (mag, color, width, alpha, fill) => {
+    g.beginPath();
+    for (let k = 0; k < n; k++) {
+      const v = mag[k];
+      const db = isFinite(v) && v > 0 ? 20 * Math.log10(v) : -60;
+      const x = (k / (n - 1)) * W, y = curveY(db);
+      if (k) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.globalAlpha = alpha;
+    if (fill) { g.save(); g.lineTo(W, bot); g.lineTo(0, bot); g.closePath(); g.fillStyle = fill; g.fill(); g.restore(); }
+    g.strokeStyle = color; g.lineWidth = width * R; g.lineJoin = 'round'; g.stroke();
+    g.globalAlpha = 1;
+  };
+  // 0 dB の線
+  g.strokeStyle = 'rgba(255,255,255,.12)'; g.setLineDash([2 * R, 4 * R]); g.lineWidth = R;
+  g.beginPath(); g.moveTo(0, curveY(0)); g.lineTo(W, curveY(0)); g.stroke(); g.setLineDash([]);
+
+  const mc = M.cutoff, mr = M.reso;
+  const modColor = mc.arcs.length ? COLORS[mc.best] : mr.arcs.length ? COLORS[mr.best] : '#fff';
+  let lineCut = cut;
+  if (mc.fast || mr.fast) {
+    // 速すぎるとき：基準の位置と、動く範囲の両端を描く
+    const dc = mc.arcs.reduce((s, a) => s + a.d, 0), dr = mr.arcs.reduce((s, a) => s + a.d, 0);
+    const nyq = A.ctx.sampleRate / 2 - 100;
+    for (const sg of [-1, 1]) {
+      drawCurve(filterCurve(S.ftype, clamp(S.cutoff * Math.pow(2, 5 * dc * sg), 10, nyq), clamp(S.reso + dr * sg)), modColor, 2, 0.55, null);
+    }
+    lineCut = S.cutoff;
+    drawCurve(filterCurve(S.ftype, S.cutoff, S.reso), '#fff', 2.5, 1, 'rgba(255,255,255,.06)');
+  } else {
+    drawCurve(filterCurve(S.ftype, cut, rCur), modColor, 2.5, 1, 'rgba(255,255,255,.07)');
+  }
+  // カットオフの位置
+  const cx = xOf(lineCut);
+  g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 1.2 * R; g.setLineDash([4 * R, 4 * R]);
+  g.beginPath(); g.moveTo(cx, 14 * R); g.lineTo(cx, bot); g.stroke(); g.setLineDash([]);
+  g.font = FONT(800, 11 * R);
+  g.textBaseline = 'top'; g.fillStyle = '#fff';
+  const lbw = g.measureText('カットオフ').width;
+  g.textAlign = 'left';
+  g.fillText('カットオフ', clamp(cx - lbw / 2, 2 * R, W - lbw - 2 * R), 1 * R);
+}
+
+/* =========================================================
+   開始
+   ========================================================= */
+$('#start').addEventListener('click', async () => {
+  const btn = $('#start');
+  btn.disabled = true; btn.textContent = 'じゅんび中…';
+  $('#err').textContent = '';
+  try {
+    await A.init();
+    A.apply(S);
+    A.modSend({ type: 'reset' });
+    $('#overlay').remove();
+    if (A.sp) toast('この環境では、かんたんなLFOで動いています');
+  } catch (e) {
+    console.error(e);
+    btn.disabled = false; btn.textContent = 'もう一度クリック';
+    $('#err').textContent = '音を出せませんでした。Chrome か Safari の最新版で開いてください。（' + (e && e.message ? e.message : e) + '）';
+  }
+});
+// Safari などで一時停止されたら、次の操作で再開する
+const resumeAudio = () => { if (A.ctx && A.ctx.state !== 'running' && A.ctx.state !== 'closed') A.ctx.resume(); };
+document.addEventListener('pointerdown', resumeAudio, true);
+document.addEventListener('keydown', resumeAudio, true);
+
+updateUI();
+layout();
+requestAnimationFrame(layout);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

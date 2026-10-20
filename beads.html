@@ -1,0 +1,2250 @@
+<!doctype html>
+<!--
+  Beads Granular Lab — Mutable Instruments Beads のグレインエンジンを
+  Web Audio に移植した、非公式の教育用グラニュラーシンセ。
+  Mutable Instruments とは関係がなく、承認も受けていません。
+
+  DSP 部分は Beads（beads/dsp/*）と stmlib のソースコードを JavaScript に
+  書き直したもので、元のコードと同じ MIT ライセンスで配布します。
+
+  Copyright 2017 Emilie Gillet.（Beads）
+  Copyright 2012 Emilie Gillet.（stmlib）
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- 外部との通信をすべて禁止する。スクリプト/スタイルを編集したら
+     python3 tools/update_csp.py web/index.html でハッシュを更新すること -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-VwVnV5Fzt2bvwNA9Efo/z7GMPpNzAZDlaZ9rlO/PjVM=' 'sha256-bZlnsW15CYlsnZlnzLakTTeCHkG9N+kACWvmAi82vWY=' blob: data:; style-src 'sha256-VQQ9f0dHM4FEHwFIAYAvAEX3gErw6g2rHTm5PqZiP1I='; connect-src 'none'; media-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beads Granular Lab（非公式）</title>
+<style>
+  :root {
+    --bg: #131519;
+    --surface: #1b1e23;
+    --surface-2: #23272d;
+    --line: #2e333a;
+    --text: #e8eaed;
+    --muted: #8b929c;
+    --accent: #ff5a4e;
+    --value: #4ec3ff;
+    --wave: #555c66;
+    --lfo1: #00d9a3;
+    --lfo2: #ff8a4a;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.45; }
+  main { position: relative; max-width: 1240px; margin: 0 auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+  h1, h3 { margin: 0; }
+  button, select, input[type=number] {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 10px; font: inherit;
+  }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: var(--muted); }
+  input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
+  input[type=number] { width: 62px; }
+  .sub { color: var(--muted); font-size: 11.5px; margin: 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+
+  /* ---------- 上の帯 ---------- */
+  .top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+  .brand h1 { font-size: 17px; letter-spacing: .02em; }
+  .badge { font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
+  .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .file { display: inline-block; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .file:hover { border-color: var(--muted); }
+  .file input { display: none; }
+  .primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; min-width: 84px; }
+  .seed { border-radius: 50%; width: 38px; height: 38px; padding: 0; font-size: 10px; font-weight: 700; }
+  .led { width: 10px; height: 10px; border-radius: 50%; background: #3a1d1b; transition: background 60ms; }
+  .led.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .field { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .field input[type=range] { width: 90px; }
+  .now { font-size: 11.5px; color: var(--value); font-variant-numeric: tabular-nums; min-width: 3.5em; }
+
+  /* ---------- グレインの表示 ---------- */
+  .stage { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+  .canvas-wrap { position: relative; border-radius: 6px; overflow: hidden; background: #0e1013; }
+  .canvas-wrap.drag { outline: 2px dashed var(--value); outline-offset: -4px; }
+  canvas { display: block; width: 100%; }
+  #wave { height: 170px; }
+  #trail { height: 92px; }
+  .overlay { position: absolute; font-size: 11px; color: var(--muted); pointer-events: none; }
+  .overlay.tl { left: 8px; top: 5px; }
+  .overlay.tr { right: 8px; top: 5px; }
+  .overlay.br { right: 8px; bottom: 4px; }
+  #srcInfo { color: var(--text); }
+
+  /* ---------- パラメーター ---------- */
+  .params { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .param { display: flex; flex-direction: column; gap: 6px; }
+  .param-head { display: flex; align-items: center; gap: 8px; }
+  .param-head h3 { font-size: 14px; letter-spacing: .06em; }
+  .value { color: var(--value); font-variant-numeric: tabular-nums; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #envPreview { height: 30px; border-radius: 4px; background: #0e1013; }
+  .check { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11.5px; }
+
+  /* ---------- 変調（LFO）---------- */
+  .bottom { display: grid; grid-template-columns: 1fr 1fr 300px; gap: 10px; }
+  .lfo { border-top: 3px solid var(--c); display: flex; flex-direction: column; gap: 8px; }
+  .lfo.off { border-top-color: var(--line); }
+  .lfo.off .lfo-body { opacity: .4; }
+  .lfo-head { display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; }
+  .lfo-head h3 { font-size: 14px; color: var(--c); letter-spacing: .04em; }
+  .outl { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .outj {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--c); border: 4px solid #11112a; flex: none;
+    box-shadow: 0 0 0 2px var(--c), 0 0 10px var(--c); cursor: grab; touch-action: none;
+  }
+  .outj:hover { transform: scale(1.12); }
+  .toggle { display: flex; align-items: center; gap: 6px; background: var(--line); border: none; border-radius: 999px; padding: 2px 9px 2px 2px; font-size: 11.5px; color: var(--muted); }
+  .toggle .sw { width: 28px; height: 16px; border-radius: 8px; background: #454b55; position: relative; }
+  .toggle .sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #9aa3af; transition: transform .15s; }
+  .toggle[aria-pressed="true"] { color: var(--text); }
+  .toggle[aria-pressed="true"] .sw { background: var(--c); }
+  .toggle[aria-pressed="true"] .sw::after { transform: translateX(12px); background: #fff; }
+  .lfo-body { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: start; }
+  .mini { height: 78px; border-radius: 6px; background: #0e1013; }
+  .lfo-controls { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .ctl { display: grid; grid-template-columns: 30px 20px 1fr; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
+  .ctl input[type=range] { accent-color: var(--c); }
+  .ctl .modbar { grid-column: 3; }
+  .lfo-row { display: flex; gap: 6px; align-items: center; }
+  .waves { display: flex; gap: 3px; flex: 1; }
+  .waves button { flex: 1; padding: 2px 0; display: flex; justify-content: center; }
+  .waves button svg { width: 22px; height: 14px; }
+  .waves svg path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+  .waves button.on { color: var(--c); border-color: var(--c); background: var(--cb); }
+  .lfo-sync { padding: 2px 4px; font-size: 11.5px; max-width: 110px; }
+  .conns { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; min-height: 22px; }
+  .chip { height: 22px; padding: 0 8px; border-radius: 11px; border: 1.5px solid var(--c); background: var(--cb); color: #fff; font-size: 11px; }
+  .chip.zero { border-style: dashed; background: none; color: var(--muted); }
+  .hint { font-size: 11px; color: var(--muted); }
+  .side { display: flex; flex-direction: column; gap: 8px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stat { background: var(--surface-2); border-radius: 6px; padding: 5px 8px; }
+  .stat b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); font-size: 10.5px; }
+  .side .row { display: flex; gap: 6px; }
+  .side select { flex: 1; min-width: 0; }
+
+  /* ---------- ジャックとケーブル（なみシンセと同じ見た目）---------- */
+  .dj {
+    display: inline-block; width: 17px; height: 17px; border-radius: 50%; flex: none;
+    background: #11112a; border: 2.5px solid #6a6a8c; box-shadow: inset 0 0 0 3px #11112a, inset 0 0 0 8px #3c3c5c;
+    transition: transform .12s, border-color .12s, box-shadow .12s;
+  }
+  body.patching .dj { border-color: #fff; box-shadow: inset 0 0 0 3px #11112a, inset 0 0 0 8px #3c3c5c, 0 0 0 4px rgba(255,255,255,.15); }
+  .dj.hot { transform: scale(1.45); border-color: var(--hot) !important; box-shadow: inset 0 0 0 3px #11112a, inset 0 0 0 8px var(--hot), 0 0 14px var(--hot) !important; }
+  body.patching, body.patching * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+  .modbar { position: relative; height: 5px; border-radius: 3px; background: #0e1013; display: none; }
+  .modbar.on { display: block; }
+  .modbar .band { position: absolute; top: 0; bottom: 0; border-radius: 3px; opacity: .45; }
+  .modbar .cur { position: absolute; top: -3px; width: 4px; height: 11px; margin-left: -2px; border-radius: 2px; }
+  #cables { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; overflow: visible; }
+  #cables path { fill: none; stroke-linecap: round; }
+  #cables .plug { pointer-events: all; cursor: grab; touch-action: none; }
+  .pop {
+    position: absolute; z-index: 20; width: 220px; background: #11112a; border: 1.5px solid var(--c); border-radius: 10px;
+    padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 6px;
+  }
+  .pop[hidden] { display: none; }
+  .pop-title { font-weight: 600; }
+  .pop-title b { color: var(--c); }
+  .pop input[type=range] { accent-color: var(--c); }
+  .pop-val { color: var(--c); font-variant-numeric: tabular-nums; }
+  .pop-btns { display: flex; gap: 6px; }
+  .pop-btns button { padding: 3px 9px; font-size: 12px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #0e0e1d; border: 1px solid #44446a;
+    padding: 8px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ---------- 下の説明 ---------- */
+  footer { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; }
+  footer summary { cursor: pointer; color: var(--text); }
+  footer code { color: var(--value); }
+  footer li { margin: 3px 0; }
+  footer pre { white-space: pre-wrap; font-size: 11px; background: #0e1013; border-radius: 6px; padding: 10px; }
+
+  @media (max-width: 1000px) {
+    .params { grid-template-columns: repeat(2, 1fr); }
+    .bottom { grid-template-columns: 1fr 1fr; }
+    .side { grid-column: 1 / -1; }
+  }
+  @media (max-width: 640px) {
+    .params, .bottom { grid-template-columns: 1fr; }
+    .lfo-body { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main id="main">
+  <header class="top">
+    <div class="brand">
+      <h1>Beads Granular Lab</h1>
+      <span class="badge" title="Mutable Instruments とは関係がなく、承認も受けていない非公式の教育用移植です">非公式・教育用</span>
+    </div>
+    <div class="group">
+      <label class="file"><input id="fileInput" type="file" accept="audio/*,.wav">WAV を開く</label>
+      <button id="demoBtn">デモ音源</button>
+    </div>
+    <div class="group">
+      <button id="playBtn" class="primary">▶ Start</button>
+      <button id="seedBtn" class="seed" title="手動トリガー（Beads の SEED ボタン）">SEED</button>
+      <span class="led" id="led"></span>
+      <label class="field">BPM <input id="bpm" type="number" min="20" max="300" value="120"></label>
+      <select id="div" title="トリガーの間隔">
+        <option value="1">1/4</option>
+        <option value="2">1/8</option>
+        <option value="3">1/8 3連</option>
+        <option value="4" selected>1/16</option>
+        <option value="6">1/16 3連</option>
+        <option value="8">1/32</option>
+        <option value="16">1/64</option>
+        <option value="32">1/128</option>
+      </select>
+      <span class="dj" data-dst="rate" title="トリガーの速さ（LFO をつなぐと速さが揺れる）"></span>
+      <span class="now" id="rateNow"></span>
+      <label class="check" title="Beads の内部クロックと同じ、間隔がランダムなトリガー"><input id="poisson" type="checkbox">ランダム間隔</label>
+      <label class="field">音量 <input id="gain" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+      <span class="dj" data-dst="amp" title="音量（LFO をつなぐとトレモロ）"></span>
+      <span class="now" id="ampNow"></span>
+    </div>
+  </header>
+
+  <section class="card stage">
+    <div class="canvas-wrap" id="waveWrap">
+      <canvas id="wave"></canvas>
+      <div class="overlay tl" id="srcInfo">「WAV を開く」か「デモ音源」を押してください（ここへドロップしても開けます）</div>
+      <div class="overlay tr">● グレイン（上下=パン、大きさ=音量）</div>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="trail"></canvas>
+      <div class="overlay tl">グレインの軌跡（縦=バッファ内の位置、傾き=速さと向き）</div>
+      <div class="overlay br">← 4 秒前 · いま</div>
+    </div>
+  </section>
+
+  <section class="params">
+    <div class="card param">
+      <div class="param-head"><h3>TIME</h3><span class="value" id="timeVal"></span><span class="dj" data-dst="time" title="LFO の出力 ● をここへつなぐ"></span></div>
+      <input id="time" type="range" min="0" max="1" step="0.001" value="0.25" aria-label="TIME">
+      <p class="sub">グレインが再生を始める位置</p>
+    </div>
+    <div class="card param">
+      <div class="param-head"><h3>SIZE</h3><span class="value" id="sizeVal"></span><span class="dj" data-dst="size" title="LFO の出力 ● をここへつなぐ"></span></div>
+      <input id="size" type="range" min="0" max="1" step="0.001" value="0.6" aria-label="SIZE">
+      <p class="sub">グレインの長さ（左 1/3 は逆再生）</p>
+    </div>
+    <div class="card param">
+      <div class="param-head"><h3>SHAPE</h3><span class="value" id="shapeVal"></span><span class="dj" data-dst="shape" title="LFO の出力 ● をここへつなぐ"></span></div>
+      <input id="shape" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="SHAPE">
+      <canvas id="envPreview"></canvas>
+    </div>
+    <div class="card param">
+      <div class="param-head"><h3>PITCH</h3><span class="value" id="pitchVal"></span><span class="dj" data-dst="pitch" title="LFO の出力 ● をここへつなぐ"></span></div>
+      <input id="pitch" type="range" min="-24" max="24" step="0.01" value="0" aria-label="PITCH">
+      <label class="check"><input id="pitchQuant" type="checkbox" checked>半音に量子化</label>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="lfos-slot" id="lfo0"></div>
+    <div class="lfos-slot" id="lfo1"></div>
+    <div class="card side">
+      <div class="stats">
+        <div class="stat"><b id="statActive">0</b><small>発音中グレイン / 32</small></div>
+        <div class="stat"><b id="statRate">0</b><small>トリガー (Hz)</small></div>
+        <div class="stat"><b id="statLen">0</b><small>グレイン長 (ms)</small></div>
+        <div class="stat"><b id="statOverlap">0</b><small>重なり（頻度×長さ）</small></div>
+      </div>
+      <div class="row">
+        <select id="modPreset" aria-label="変調の例"></select>
+        <button id="modClear">全部外す</button>
+      </div>
+      <p class="sub">LFO の ● を、つまみの ◎ へドラッグしてつなぎます。プラグをクリックすると深さ、外へドラッグすると外れます。変調は「グレインが鳴り始めた瞬間」の値に効きます。</p>
+    </div>
+  </section>
+
+  <footer>
+    <p class="sub">Mutable Instruments とは関係がなく、承認も受けていない非公式の移植です。ヘッドホンを使うときは、端末の音量を小さくしてから再生してください。<span id="engineInfo"></span></p>
+    <details>
+      <summary>ソースコードとの対応（学習用メモ）</summary>
+      <ul>
+        <li><code>GrainEnvelope</code> ← <code>beads/dsp/grain_envelope.h</code>：SHAPE からアタック/サステイン/リリースとスムーズネスを計算</li>
+        <li><code>VoiceStealingEnvelope</code> ← <code>beads/dsp/voice_stealing_envelope.h</code>：32 ボイスを使い切ったときの短いフェードアウト</li>
+        <li><code>SampleGrain</code> ← <code>beads/dsp/delay_grain.h</code>：Hermite 補間で読み出し、端に近づくとフェード、端を越えたら停止（HEAD_CROSSING_POLICY_STOP）</li>
+        <li><code>GranularPlayer</code> ← <code>beads/dsp/granular_player.h</code> + <code>delay_granular_player.h</code>：グレイン長の計算、音量 1/√N、パンの広がり、ボイススチールの優先順位付け</li>
+        <li><code>BeadsEngine.nextTrigger</code> ← <code>beads/dsp/trigger_generator.cc</code> の <code>RenderPulseTrain</code>：位相累積でトリガー、サンプル以下の端数（fractional_sample）も保持</li>
+        <li><code>ModCore</code> ← <code>nami-synth/index.html</code> の <code>ModCore</code>：LFO×2。1 サンプル前の出力をケーブルの深さで足し合わせ、行き先ごとの変調量を作る（Beads 原機にはない追加機能）</li>
+      </ul>
+      <p>原機との違い：外部入力の録音バッファの代わりに WAV を「FREEZE が常にオン」の状態として扱います。TIME は原機では「書き込みヘッドから遡る量」ですが、ここでは「ファイル先頭からの位置」です。原機の TIME/SIZE/SHAPE/PITCH にあるランダム量（アッテネーター）は省き、代わりに LFO で動かします。固定小数点（×1024）は浮動小数点に置き換えています。フィードバック、リバーブ、低ビットの音質モードは未実装です。</p>
+    </details>
+    <details>
+      <summary>ライセンス・クレジット・プライバシー</summary>
+      <p>このページは Mutable Instruments Beads のファームウェア（<code>beads/dsp/</code>）と stmlib のソースコードを JavaScript に移植した非公式の教育用教材です。Mutable Instruments とは関係がなく、承認も受けていません。「Mutable Instruments」「Beads」は各権利者の名称です。移植部分も元のコードと同じ MIT ライセンスで配布します。</p>
+      <p>読み込んだ音声ファイルはこの端末のブラウザの中だけで処理され、どこにも送信・保存されません。このページは外部と通信しない設定（Content-Security-Policy）になっています。</p>
+      <pre>Copyright 2017 Emilie Gillet. (Beads)
+Copyright 2012 Emilie Gillet. (stmlib)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.</pre>
+    </details>
+  </footer>
+
+  <svg id="cables" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div class="pop" id="pop" hidden>
+    <div class="pop-title"><b class="pop-src"></b> → <span class="pop-dst"></span></div>
+    <input id="popDepth" type="range" min="0" max="1" step="0.01" aria-label="変調の深さ">
+    <div class="pop-val" id="popVal"></div>
+    <div class="pop-btns"><button id="popDel">ケーブルを外す</button><button id="popClose">閉じる</button></div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     DSP コア：メインスレッドと AudioWorklet の両方でこのソースを共有する。
+     メインスレッドでは通常のスクリプトとして実行し（表示用の計算と、
+     AudioWorklet が使えないときの予備のエンジン）、AudioWorklet には
+     このタグの textContent をそのまま渡す。
+     ============================================================ -->
+<script id="dsp-src">
+const kInstantCrossfadeTime = 0.005;
+const kSimpleSchedulerThreshold = 0.025;
+const kPreemptiveCrossfadeTime = 0.1;
+const NUM_GRAINS = 32;
+const HEAD_CROSSING_SAFETY_ZONE = 256;
+
+const semitonesToRatio = (s) => Math.pow(2, s / 12);
+const smoothStep = (x) => x * x * (3 - 2 * x);
+const constrain = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
+const randomFloat = Math.random;
+const centeredUniform = () => 2 * randomFloat() - 1;
+
+function boundedRandomFloat(spread) {
+  const u = randomFloat();
+  const v = randomFloat();
+  return 0.5 + (u - 0.5) * Math.min(spread * v, 1);
+}
+
+// stmlib の InterpolateHermite と同じ 4 点 Hermite 補間
+function readHermite(data, i, f) {
+  const xm1 = data[i - 1], x0 = data[i], x1 = data[i + 1], x2 = data[i + 2];
+  const c = (x1 - xm1) * 0.5;
+  const v = x0 - x1;
+  const w = c + v;
+  const a = w + v + (x2 - x0) * 0.5;
+  const bNeg = w + a;
+  return (((a * f) - bNeg) * f + c) * f + x0;
+}
+
+// granular_player.h: ComputeGrainDuration（SIZE → サンプル数）
+function computeGrainDuration(size, maxGrainDuration) {
+  const reverse = size < 0.3333333;
+  const clampedShortness = reverse
+      ? size * 3 * (2 - size * 3)
+      : 1 - 1.5 * (size - 0.3333333);
+  const shortness = Math.min(1, 1.025 * clampedShortness);
+  return semitonesToRatio(shortness * -108) * maxGrainDuration;
+}
+
+// grain_envelope.h
+const STAGE_ATTACK = 0, STAGE_SUSTAIN = 1, STAGE_RELEASE = 2, STAGE_DONE = 3;
+
+class GrainEnvelope {
+  constructor(sampleRate) {
+    this.stage = STAGE_DONE;
+    this.phase = 0;
+    this.phaseIncrement = [0.5, 0.5, 0.5, 0];
+    this.smoothness = 0;
+    this.minAttack = 0.0005 * sampleRate;
+    this.minRelease = 0.010 * sampleRate;
+  }
+
+  start(duration, shape, fractionalSample = 0) {
+    this.stage = STAGE_ATTACK;
+    this.phase = 0;
+
+    const sustain = Math.max(1 - 3 * shape, 0);
+    shape = (shape - 0.33333333) * 1.5;
+    if (shape < 0) {
+      shape = 0;
+    } else if (shape < 0.5) {
+      shape = shape * shape * shape * 4;
+    }
+    const attack = shape;
+    const release = (1 - attack) * (1 - sustain);
+
+    const attackDuration = Math.max(
+        duration * attack, this.minAttack * (1 + 3 * sustain));
+    const sustainDuration = Math.max(duration * sustain, 2);
+    const releaseDuration = Math.max(duration * release, this.minRelease);
+
+    this.phaseIncrement[STAGE_ATTACK] = 1 / attackDuration;
+    this.phaseIncrement[STAGE_SUSTAIN] = 1 / sustainDuration;
+    this.phaseIncrement[STAGE_RELEASE] = 1 / releaseDuration;
+    this.smoothness = attack < 0.5 ? 2 * attack : 2 - 2 * attack;
+
+    this.phase += this.phaseIncrement[this.stage] * fractionalSample;
+    this.wrapPhase();
+  }
+
+  stop() {
+    this.stage = STAGE_DONE;
+  }
+
+  wrapPhase() {
+    if (this.phase >= 1) {
+      const t = (this.phase - 1) / this.phaseIncrement[this.stage];
+      this.stage += 1;
+      this.phase = t * this.phaseIncrement[this.stage];
+    }
+  }
+
+  render() {
+    if (this.stage === STAGE_DONE) {
+      return 0;
+    }
+    let value;
+    if (this.stage === STAGE_SUSTAIN) {
+      value = 1;
+    } else {
+      const attack = this.stage === STAGE_ATTACK;
+      const t = attack ? this.phase : 1 - this.phase;
+      const base = attack ? t : (t * t) * (t * t);
+      value = base + (smoothStep(t) - base) * this.smoothness;
+    }
+    this.phase += this.phaseIncrement[this.stage];
+    this.wrapPhase();
+    return value;
+  }
+
+  done() {
+    return this.stage >= STAGE_DONE;
+  }
+}
+
+// voice_stealing_envelope.h
+class VoiceStealingEnvelope {
+  constructor() { this.resetAndPause(); }
+  resetAndPause() {
+    this.value = 1;
+    this.decrement = 0;
+  }
+  start(duration) {
+    this.decrement = 1 / duration;
+    return Math.trunc(this.value * duration);
+  }
+  render() {
+    this.value -= this.decrement;
+    return Math.max(this.value, 0);
+  }
+  done() {
+    return this.value <= 0;
+  }
+}
+
+// delay_grain.h を「凍結された（FREEZE 中の）バッファ」専用に単純化したもの。
+// 原機の delay_ は書き込みヘッドから遡る距離だが、ここでは先頭からの位置 position。
+class SampleGrain {
+  constructor(sampleRate) {
+    this.envelope = new GrainEnvelope(sampleRate);
+    this.voiceStealingEnvelope = new VoiceStealingEnvelope();
+    this.remainingSamples = 0;
+    this.position = 0;
+    this.speed = 1;
+    this.gain = [[0.5, 0.5], [0.5, 0.5]];  // gain[出力ch][入力ch]
+    this.lastLevel = 0;
+    this.pan = 0.5;
+  }
+
+  done() {
+    return this.envelope.done() || this.voiceStealingEnvelope.done();
+  }
+
+  fadeOut(duration) {
+    if (this.remainingSamples > duration) {
+      this.remainingSamples = this.voiceStealingEnvelope.start(duration);
+    }
+  }
+
+  static compare(lhs, rhs) {
+    return lhs.remainingSamples - rhs.remainingSamples;
+  }
+
+  start(source, position, speed, duration, shape, gain, pan, fractionalSample) {
+    const length = source.length;
+    const safety = HEAD_CROSSING_SAFETY_ZONE;
+    position += fractionalSample * speed;
+
+    // バッファ内に収まるように長さを詰める
+    duration = Math.min(duration, (length - 2 * safety) / Math.abs(speed));
+    // 端にぶつからないように開始位置を詰める
+    if (speed > 0) {
+      position = Math.min(position, length - safety - duration * speed);
+    } else {
+      position = Math.max(position, safety + duration * -speed);
+    }
+    this.position = constrain(position, safety, length - safety);
+    this.speed = speed;
+    this.pan = pan;
+
+    // おおよそ等パワーのパン（平方根の一次近似）
+    const g = this.gain;
+    if (source.numChannels === 2) {
+      if (pan < 0.5) {
+        pan *= 2;
+        g[0][0] = gain;
+        g[1][0] = 0;
+        g[1][1] = pan * (2 - pan) * gain;
+        g[0][1] = (1 - pan) * (1 + pan) * gain;
+      } else {
+        pan = (1 - pan) * 2;
+        g[1][1] = gain;
+        g[0][1] = 0;
+        g[0][0] = pan * (2 - pan) * gain;
+        g[1][0] = (1 - pan) * (1 + pan) * gain;
+      }
+    } else {
+      g[1][0] = pan * (2 - pan) * gain;
+      g[0][0] = (1 - pan) * (1 + pan) * gain;
+      g[0][1] = g[1][1] = 0;
+    }
+
+    this.envelope.start(duration, shape, fractionalSample);
+    this.remainingSamples = Math.trunc(duration);
+    this.voiceStealingEnvelope.resetAndPause();
+  }
+
+  render(source, out) {
+    if (this.done()) {
+      this.lastLevel = 0;
+      return;
+    }
+    this.position += this.speed;
+
+    const length = source.length;
+    // HEAD_CROSSING_POLICY_STOP：バッファの端を越えたら止める
+    if (this.position < 1 || this.position >= length - 2) {
+      this.position = 1;
+      this.envelope.stop();
+      this.lastLevel = 0;
+      return;
+    }
+
+    const zone = HEAD_CROSSING_SAFETY_ZONE;
+    const d = Math.min(this.position, length - this.position);
+    const fadeRamp = d < zone ? d / zone : 1;
+
+    const i = Math.floor(this.position);
+    const f = this.position - i;
+    let l = readHermite(source.left, i, f);
+    let r = source.numChannels === 2 ? readHermite(source.right, i, f) : 0;
+
+    const level = smoothStep(fadeRamp) *
+        this.envelope.render() * this.voiceStealingEnvelope.render();
+    l *= level;
+    r *= level;
+    this.lastLevel = level;
+
+    const g = this.gain;
+    out[0] += l * g[0][0] + r * g[0][1];
+    out[1] += l * g[1][0] + r * g[1][1];
+
+    this.remainingSamples -= 1;
+    if (this.done()) {
+      this.remainingSamples = 0;
+    }
+  }
+}
+
+// granular_player.h + delay_granular_player.h
+// 原機の Parameters は RandomizedParameter（ランダム量つき）だが、ここではつまみの値をそのまま使う
+class GranularPlayer {
+  constructor(sampleRate) {
+    this.instantCrossfadeTime = Math.trunc(sampleRate * kInstantCrossfadeTime);
+    this.preemptiveCrossfadeTime = Math.trunc(sampleRate * kPreemptiveCrossfadeTime);
+    this.simpleSchedulerThreshold = Math.trunc(sampleRate * kSimpleSchedulerThreshold);
+    this.grainInterval = 1;
+    this.maxGrainDuration = sampleRate * 4;
+    this.grains = [];
+    for (let i = 0; i < NUM_GRAINS; ++i) {
+      this.grains.push(new SampleGrain(sampleRate));
+    }
+    this.priorityList = this.grains.slice();
+  }
+
+  countActiveGrains() {
+    let n = 0;
+    for (const grain of this.grains) {
+      if (!grain.done()) ++n;
+    }
+    return n;
+  }
+
+  // 同時発音数が増えるほど 1 つあたりの音量を下げ、トリガーが不規則なほどパンを広げる
+  computeGrainAmplitudeAndPan(regularity) {
+    const numActiveGrains = this.countActiveGrains() + 1;
+    const amplitude = 1 / Math.sqrt(numActiveGrains);
+    const totalSpread = Math.min(1 - regularity, 1);
+    const pan = boundedRandomFloat(0.5 * numActiveGrains * totalSpread);
+    return { amplitude, pan };
+  }
+
+  // 新しいグレインを発音したとき、次に盗まれそうなグレインを先にフェードアウトさせる
+  sortGrainList(monophonicMode) {
+    const list = this.priorityList;
+    if (monophonicMode) {
+      list.push(list.shift());
+      list[0].fadeOut(Math.min(this.grainInterval, this.instantCrossfadeTime));
+      for (let i = 1; i < NUM_GRAINS - 1; ++i) {
+        list[i].fadeOut(this.instantCrossfadeTime);
+      }
+    } else {
+      const fadeTime = [0, 0, 0, 0];
+      if (this.grainInterval < this.simpleSchedulerThreshold) {
+        // トリガーが非常に速いときは、先頭のグレインがほぼ終わっていると仮定して盗む
+        list.push(list.shift());
+        fadeTime[0] = this.grainInterval + 1;
+        fadeTime[1] = this.instantCrossfadeTime;
+        fadeTime[2] = this.instantCrossfadeTime;
+        fadeTime[3] = this.preemptiveCrossfadeTime;
+        if (this.grainInterval > this.instantCrossfadeTime) {
+          [fadeTime[0], fadeTime[2]] = [fadeTime[2], fadeTime[0]];
+        }
+      } else {
+        // 残り時間が短い順に並べ、先頭ほど盗まれやすくする
+        list.sort(SampleGrain.compare);
+        fadeTime[0] = this.instantCrossfadeTime;
+        fadeTime[1] = this.instantCrossfadeTime;
+        fadeTime[2] = this.grainInterval;
+        fadeTime[3] = this.preemptiveCrossfadeTime;
+        if (this.grainInterval > this.preemptiveCrossfadeTime) {
+          [fadeTime[2], fadeTime[3]] = [fadeTime[3], fadeTime[2]];
+        }
+      }
+      for (let i = 0; i < 4; ++i) {
+        list[i].fadeOut(fadeTime[i]);
+      }
+    }
+    this.grainInterval = 0;
+  }
+
+  render(source, trigger, p, out) {
+    if (trigger.trigger && source) {
+      const reverse = p.size < 0.3333333;
+      const { amplitude, pan } = this.computeGrainAmplitudeAndPan(trigger.regularity);
+
+      const safety = HEAD_CROSSING_SAFETY_ZONE + 1;
+      const usable = source.length - 2 * safety;
+      this.priorityList[0].start(
+          source,
+          p.time * usable + safety,
+          (reverse ? -1 : 1) * semitonesToRatio(p.pitch),
+          computeGrainDuration(p.size, this.maxGrainDuration),
+          p.shape,
+          amplitude, pan,
+          trigger.fractionalSample);
+      this.sortGrainList(p.monophonicMode);
+    }
+
+    if (source) {
+      for (let i = 0; i < NUM_GRAINS; ++i) {
+        this.grains[i].render(source, out);
+      }
+    }
+    ++this.grainInterval;
+  }
+}
+
+// ---------- 変調のもと（LFO×2）----------
+// なみシンセ（nami-synth/index.html）の ModCore を元にしている。
+// LFO→LFO の速さ・出力のような「変調どうしのつなぎ」もこの中で計算する。
+const NUM_LFOS = 2;
+const LFO_WAVES = ['sine', 'triangle', 'sawtooth', 'square', 'sh'];
+const LFO_RATE_OCTAVES = 4;  // 速さへの変調：深さ 100% で ±4 オクターブ
+const MOD_DESTINATIONS = [
+  'time', 'size', 'shape', 'pitch', 'rate', 'amp',
+  'rate0', 'rate1', 'lvl0', 'lvl1',
+];
+const MOD_CODE = {};
+MOD_DESTINATIONS.forEach((d, i) => { MOD_CODE[d] = i; });
+
+function lfoWave(wave, phase) {
+  switch (wave) {
+    case 0: return Math.sin(2 * Math.PI * phase);
+    case 1: return phase < 0.25 ? 4 * phase : phase < 0.75 ? 2 - 4 * phase : 4 * phase - 4;
+    case 2: return 2 * phase - 1;
+    case 3: return phase < 0.5 ? 1 : -1;
+    default: return 0;
+  }
+}
+
+class ModCore {
+  constructor(sampleRate) {
+    this.sampleRate = sampleRate;
+    this.lfos = [];
+    for (let i = 0; i < NUM_LFOS; ++i) {
+      this.lfos.push({
+        on: false, wave: 0, rate: 1, level: 1,
+        phase: 0, held: centeredUniform(), out: 0, rateEff: 1, levelEff: 1,
+      });
+    }
+    this.cables = [];  // [もと, 行き先のコード, 深さ]
+    this.mod = new Float32Array(MOD_DESTINATIONS.length);
+  }
+
+  setLfo(i, s) {
+    const lfo = this.lfos[i];
+    lfo.on = s.on;
+    lfo.wave = s.wave;
+    lfo.rate = s.rate;
+    lfo.level = s.level;
+  }
+
+  // 1 サンプル進めて、行き先ごとの変調量（-1〜1 × 深さ の合計）を返す
+  tick() {
+    const mod = this.mod;
+    const lfos = this.lfos;
+
+    // 1 つ前のサンプルの出力から、行き先ごとの変調量を足し合わせる
+    mod.fill(0);
+    for (let c = 0; c < this.cables.length; ++c) {
+      const cable = this.cables[c];
+      mod[cable[1]] += cable[2] * lfos[cable[0]].out;
+    }
+
+    for (let i = 0; i < NUM_LFOS; ++i) {
+      const lfo = lfos[i];
+      const rate = constrain(
+          lfo.rate * Math.pow(2, LFO_RATE_OCTAVES * mod[MOD_CODE.rate0 + i]), 0.005, 200);
+      const level = constrain(lfo.level + mod[MOD_CODE.lvl0 + i], 0, 1);
+      lfo.rateEff = rate;
+      lfo.levelEff = level;
+      // wave 4 は「ランダム（S&H）」：1 周ごとに新しいランダムな値を拾って保つ
+      const value = !lfo.on ? 0 : lfo.wave === 4 ? lfo.held : lfoWave(lfo.wave, lfo.phase);
+      lfo.out = value * level;
+      lfo.phase += rate / this.sampleRate;
+      if (lfo.phase >= 1) {
+        lfo.phase -= 1;
+        if (lfo.wave === 4) lfo.held = centeredUniform();
+      }
+    }
+    return mod;
+  }
+}
+
+// ---------- エンジン本体 ----------
+// AudioWorklet の中でも、予備の ScriptProcessor（メインスレッド）でも同じものを使う。
+const logOneMinusX = (x) => -x * (1 + x * (0.5 + x * (0.3333 + x * 0.25)));
+// 聴覚保護のための出力の上限（ソフトクリップ後に掛ける。0.5 ≒ -6 dBFS）
+const OUTPUT_CEILING = 0.5;
+const MAX_GAIN = 1;
+
+// stmlib の SoftClip
+function softClip(x) {
+  if (x < -3) return -1;
+  if (x > 3) return 1;
+  return x * (27 + x * x) / (27 + 9 * x * x);
+}
+
+class BeadsEngine {
+  constructor(sampleRate) {
+    this.sampleRate = sampleRate;
+    this.player = new GranularPlayer(sampleRate);
+    this.source = null;
+    // つまみの値（変調をかける前）。グレインを発音するたびに変調を足して params に入れる
+    this.base = { time: 0.25, size: 0.6, shape: 0.5, pitch: 0 };
+    this.params = { time: 0.25, size: 0.6, shape: 0.5, pitch: 0, monophonicMode: false };
+    this.pitchQuantize = true;
+    this.modCore = new ModCore(sampleRate);
+    // 変調後の値：TIME, SIZE, SHAPE, PITCH, トリガー速さの倍率, 音量の倍率
+    this.effective = new Float32Array(6);
+
+    this.bpm = 120;
+    this.division = 4;
+    this.poisson = false;
+    this.running = false;
+    this.gain = 0.5;
+    this.smoothedGain = 0;  // 再生開始時や音量変更時のクリックを防ぐ
+
+    // trigger_generator.cc: RenderPulseTrain の状態
+    this.phase = 0;
+    this.ratio = 1;
+    this.manualTrigger = false;
+    this.trigger = { trigger: false, fractionalSample: 0, regularity: 1 };
+
+    this.frame = [0, 0];
+    this.triggerCount = 0;
+    this.samplesSinceReport = 0;
+    this.reportInterval = Math.round(sampleRate / 60);  // 約 60fps で表示用の状態を返す
+  }
+
+  handleMessage(msg) {
+    if (msg.type === 'buffer') {
+      this.player = new GranularPlayer(this.sampleRate);
+      this.source = {
+        left: msg.channels[0],
+        right: msg.channels[1] || null,
+        numChannels: msg.channels.length,
+        length: msg.channels[0].length,
+      };
+    } else if (msg.type === 'params') {
+      for (const key of ['time', 'size', 'shape', 'pitch']) {
+        this.base[key] = msg[key];
+      }
+      this.pitchQuantize = msg.pitchQuantize;
+      this.bpm = msg.bpm;
+      this.division = msg.division;
+      this.poisson = msg.poisson;
+      this.gain = constrain(+msg.gain || 0, 0, MAX_GAIN);
+      if (msg.running && !this.running) {
+        this.phase = 1;  // 再生開始直後の最初のサンプルでトリガーする
+      }
+      this.running = msg.running;
+    } else if (msg.type === 'seed') {
+      this.manualTrigger = true;
+    } else if (msg.type === 'mod') {
+      msg.lfos.forEach((lfo, i) => this.modCore.setLfo(i, lfo));
+      this.modCore.cables = msg.cables;
+    }
+  }
+
+  // つまみの値に変調を足す（グレインのパラメーターは発音の瞬間の値で決まる）
+  updateModulatedValues(m) {
+    const b = this.base;
+    const e = this.effective;
+    e[0] = constrain(b.time + m[MOD_CODE.time], 0, 1);
+    e[1] = constrain(b.size + m[MOD_CODE.size], 0, 1);
+    e[2] = constrain(b.shape + m[MOD_CODE.shape], 0, 1);
+    let pitch = constrain(b.pitch + 24 * m[MOD_CODE.pitch], -48, 48);
+    if (this.pitchQuantize) pitch = Math.round(pitch);
+    e[3] = pitch;
+    e[4] = Math.pow(2, 2 * m[MOD_CODE.rate]);
+    e[5] = constrain(1 + m[MOD_CODE.amp], 0, 2);
+  }
+
+  nextTrigger(rateMultiplier) {
+    const t = this.trigger;
+    t.trigger = false;
+    t.fractionalSample = 0;
+    t.regularity = this.poisson ? 0 : 1;
+
+    if (this.manualTrigger) {
+      this.manualTrigger = false;
+      t.trigger = true;
+      return t;
+    }
+    if (!this.running) {
+      return t;
+    }
+    if (!this.poisson) {
+      this.ratio = 1;
+    }
+    const frequency = this.bpm / 60 * this.division / this.sampleRate * rateMultiplier;
+    const f = constrain(frequency * this.ratio, 0.000001, 0.25);
+    this.phase += f;
+    if (this.phase >= 1) {
+      this.phase -= 1;
+      t.fractionalSample = this.phase / f;
+      t.trigger = true;
+      if (this.poisson) {
+        // 指数分布に近い間隔（平均はテンポどおり）
+        this.ratio = -1 / logOneMinusX(0.1 + 0.9 * randomFloat());
+      }
+    }
+    return t;
+  }
+
+  // outL / outR を埋める。表示用の状態を返す時期になったら、その状態を返す
+  render(outL, outR) {
+    const frame = this.frame;
+    const gain = this.gain;
+    const p = this.params;
+    const e = this.effective;
+    let smoothedGain = this.smoothedGain;
+
+    for (let i = 0; i < outL.length; ++i) {
+      smoothedGain += (gain - smoothedGain) * 0.001;
+      const m = this.modCore.tick();
+      const trigger = this.nextTrigger(Math.pow(2, 2 * m[MOD_CODE.rate]));
+      if (trigger.trigger) {
+        ++this.triggerCount;
+        this.updateModulatedValues(m);
+        p.time = e[0];
+        p.size = e[1];
+        p.shape = e[2];
+        p.pitch = e[3];
+      }
+      frame[0] = 0;
+      frame[1] = 0;
+      this.player.render(this.source, trigger, p, frame);
+      const g = smoothedGain * constrain(1 + m[MOD_CODE.amp], 0, 2);
+      outL[i] = softClip(frame[0] * g) * OUTPUT_CEILING;
+      outR[i] = softClip(frame[1] * g) * OUTPUT_CEILING;
+    }
+    this.smoothedGain = smoothedGain;
+
+    this.samplesSinceReport += outL.length;
+    if (this.samplesSinceReport < this.reportInterval) {
+      return null;
+    }
+    this.samplesSinceReport = 0;
+    return this.makeReport();
+  }
+
+  makeReport() {
+    const grains = new Float32Array(NUM_GRAINS * 4);
+    let active = 0;
+    const length = this.source ? this.source.length : 1;
+    for (let i = 0; i < NUM_GRAINS; ++i) {
+      const grain = this.player.grains[i];
+      const alive = !grain.done();
+      if (alive) ++active;
+      grains[i * 4] = alive ? grain.position / length : -1;
+      grains[i * 4 + 1] = alive ? grain.lastLevel : 0;
+      grains[i * 4 + 2] = grain.pan;
+      grains[i * 4 + 3] = grain.speed;
+    }
+    const lfo = new Float32Array(NUM_LFOS * 4);
+    this.modCore.lfos.forEach((source, i) => {
+      lfo[i * 4] = source.phase;
+      lfo[i * 4 + 1] = source.out;
+      lfo[i * 4 + 2] = source.rateEff;
+      lfo[i * 4 + 3] = source.levelEff;
+    });
+    this.updateModulatedValues(this.modCore.mod);
+    const report = {
+      type: 'state',
+      grains,
+      active,
+      triggers: this.triggerCount,
+      lfo,
+      effective: this.effective.slice(),
+    };
+    this.triggerCount = 0;
+    return report;
+  }
+}
+</script>
+
+<!-- ============================================================
+     AudioWorklet プロセッサ（上の DSP ソースの後ろに連結して読み込む）
+     ============================================================ -->
+<script type="text/plain" id="worklet-src">
+class BeadsGranularProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.engine = new BeadsEngine(sampleRate);
+    this.port.onmessage = (e) => this.engine.handleMessage(e.data);
+  }
+
+  process(inputs, outputs) {
+    const out = outputs[0];
+    const report = this.engine.render(out[0], out[1] || out[0]);
+    if (report) this.port.postMessage(report);
+    return true;
+  }
+}
+
+registerProcessor('beads-granular', BeadsGranularProcessor);
+</script>
+
+<script>
+const dspSource = document.getElementById('dsp-src').textContent;
+const workletSource = document.getElementById('worklet-src').textContent;
+
+const $ = (id) => document.getElementById(id);
+const qs = (sel, root = document) => root.querySelector(sel);
+const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const ui = {
+  time: $('time'), size: $('size'), shape: $('shape'), pitch: $('pitch'), pitchQuant: $('pitchQuant'),
+  bpm: $('bpm'), div: $('div'), poisson: $('poisson'), gain: $('gain'),
+};
+
+let ctx = null;
+let engine = null;          // { post(msg, transfer) }：AudioWorklet か ScriptProcessor のどちらか
+let running = false;
+let buffer = null;          // { channels: Float32Array[], sampleRate, duration, name }
+let grainState = null;
+let lastStateTime = 0;
+let triggerRate = 0;
+const ledEl = $('led');
+
+// ---------- オーディオの準備 ----------
+// 1. AudioWorklet を blob: URL で読み込む
+// 2. だめなら data: URL で読み込む（Chrome で HTML ファイルを直接開いたとき、blob: は拒否される）
+// 3. それもだめなら ScriptProcessor（メインスレッド）で同じエンジンを動かす
+
+let audioReady = null;
+function ensureAudio() {
+  if (!audioReady) {
+    audioReady = initAudio().catch((err) => {
+      audioReady = null;
+      throw err;
+    });
+  }
+  return audioReady;
+}
+
+async function initAudio() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error('このブラウザは Web Audio に対応していません');
+  }
+  ctx = new AudioContextClass({ latencyHint: 'interactive' });
+  try {
+    engine = await startWorkletEngine(ctx);
+    $('engineInfo').textContent = '';
+  } catch (err) {
+    console.warn('AudioWorklet が使えないため、ScriptProcessor で動かします。', err);
+    engine = startScriptProcessorEngine(ctx);
+    $('engineInfo').textContent = '（互換モードで動作中：音が途切れる場合は、Web サーバー経由で開いてください）';
+  }
+  sendParams();
+}
+
+async function startWorkletEngine(context) {
+  if (!context.audioWorklet || typeof AudioWorkletNode === 'undefined') {
+    throw new Error('AudioWorklet がありません');
+  }
+  const code = dspSource + '\n' + workletSource;
+  const urls = [
+    URL.createObjectURL(new Blob([code], { type: 'text/javascript' })),
+    'data:text/javascript;charset=utf-8,' + encodeURIComponent(code),
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      await context.audioWorklet.addModule(url);
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (lastError) throw lastError;
+  const node = new AudioWorkletNode(context, 'beads-granular', {
+    numberOfInputs: 0,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+  });
+  node.connect(context.destination);
+  node.port.onmessage = (e) => onEngineMessage(e.data);
+  return { post: (msg, transfer) => node.port.postMessage(msg, transfer || []) };
+}
+
+function startScriptProcessorEngine(context) {
+  const core = new BeadsEngine(context.sampleRate);
+  const processor = context.createScriptProcessor(2048, 1, 2);
+  processor.onaudioprocess = (e) => {
+    const out = e.outputBuffer;
+    const report = core.render(out.getChannelData(0), out.getChannelData(1));
+    if (report) onEngineMessage(report);
+  };
+  processor.connect(context.destination);
+  return { post: (msg) => core.handleMessage(msg) };
+}
+
+function currentPitch() {
+  const v = parseFloat(ui.pitch.value);
+  return ui.pitchQuant.checked ? Math.round(v) : v;
+}
+
+function constrainNum(x, lo, hi) {
+  return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : lo;
+}
+
+function sendParams() {
+  updateReadouts();
+  if (!engine) return;
+  engine.post({
+    type: 'params',
+    time: +ui.time.value,
+    size: +ui.size.value,
+    shape: +ui.shape.value,
+    pitch: +ui.pitch.value,
+    pitchQuantize: ui.pitchQuant.checked,
+    bpm: constrainNum(+ui.bpm.value, 20, 300),
+    division: +ui.div.value,
+    poisson: ui.poisson.checked,
+    gain: +ui.gain.value,
+    running,
+  });
+  sendMod();  // BPM 同期した LFO の速さも更新する
+}
+
+function onEngineMessage(msg) {
+  if (msg.type !== 'state') return;
+  grainState = msg;
+  for (let i = 0; i < NUM_LFOS; ++i) {
+    lfoHistory[i][lfoHistoryIndex] = msg.lfo[i * 4 + 1];
+  }
+  lfoHistoryIndex = (lfoHistoryIndex + 1) % LFO_HISTORY;
+  const now = performance.now();
+  const dt = (now - (lastStateTime || now)) / 1000;
+  lastStateTime = now;
+  if (dt > 0) {
+    triggerRate += (msg.triggers / dt - triggerRate) * 0.1;
+  }
+  if (msg.triggers > 0) {
+    ledEl.classList.add('on');
+    clearTimeout(ledEl._t);
+    ledEl._t = setTimeout(() => ledEl.classList.remove('on'), 50);
+  }
+  $('statActive').textContent = msg.active;
+  $('statRate').textContent = triggerRate.toFixed(1);
+  $('statOverlap').textContent = (triggerRate * grainLengthSeconds()).toFixed(1);
+}
+
+// ---------- 音源 ----------
+
+function showStatus(text) {
+  $('srcInfo').textContent = text;
+}
+
+function decodeWithContext(arrayBuffer) {
+  return new Promise((resolve, reject) => {
+    // 古い Safari はコールバック形式だけに対応しているので、両方に対応する
+    const result = ctx.decodeAudioData(arrayBuffer, resolve, reject);
+    if (result && result.then) result.then(resolve, reject);
+  });
+}
+
+// ブラウザがデコードできない WAV のための予備（PCM 8/16/24/32 bit、浮動小数点 32/64 bit）
+function parseWav(arrayBuffer) {
+  const view = new DataView(arrayBuffer);
+  const tag = (o) => String.fromCharCode(
+      view.getUint8(o), view.getUint8(o + 1), view.getUint8(o + 2), view.getUint8(o + 3));
+  if (view.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') {
+    throw new Error('WAV ファイルとして読めませんでした');
+  }
+  let offset = 12;
+  let fmt = null;
+  let dataOffset = -1;
+  let dataLength = 0;
+  while (offset + 8 <= view.byteLength) {
+    const id = tag(offset);
+    const size = view.getUint32(offset + 4, true);
+    const body = offset + 8;
+    if (id === 'fmt ') {
+      let format = view.getUint16(body, true);
+      if (format === 0xfffe && size >= 26) format = view.getUint16(body + 24, true);  // WAVE_FORMAT_EXTENSIBLE
+      fmt = {
+        format,
+        numChannels: view.getUint16(body + 2, true),
+        sampleRate: view.getUint32(body + 4, true),
+        bits: view.getUint16(body + 14, true),
+      };
+    } else if (id === 'data') {
+      dataOffset = body;
+      dataLength = Math.min(size, view.byteLength - body);
+    }
+    offset = body + size + (size & 1);
+  }
+  if (!fmt || dataOffset < 0) {
+    throw new Error('WAV の中に音声データが見つかりませんでした');
+  }
+  const bytes = fmt.bits / 8;
+  let read;
+  if (fmt.format === 1 && fmt.bits === 8) read = (o) => (view.getUint8(o) - 128) / 128;
+  else if (fmt.format === 1 && fmt.bits === 16) read = (o) => view.getInt16(o, true) / 32768;
+  else if (fmt.format === 1 && fmt.bits === 24) {
+    read = (o) => (view.getUint8(o) | (view.getUint8(o + 1) << 8) | (view.getInt8(o + 2) << 16)) / 8388608;
+  } else if (fmt.format === 1 && fmt.bits === 32) read = (o) => view.getInt32(o, true) / 2147483648;
+  else if (fmt.format === 3 && fmt.bits === 32) read = (o) => view.getFloat32(o, true);
+  else if (fmt.format === 3 && fmt.bits === 64) read = (o) => view.getFloat64(o, true);
+  else throw new Error(`この WAV 形式には対応していません（形式 ${fmt.format}、${fmt.bits} bit）`);
+
+  const frameSize = bytes * fmt.numChannels;
+  const frames = Math.floor(dataLength / frameSize);
+  const numChannels = Math.min(2, fmt.numChannels);
+  const channels = [];
+  for (let c = 0; c < numChannels; ++c) channels.push(new Float32Array(frames));
+  for (let i = 0; i < frames; ++i) {
+    for (let c = 0; c < numChannels; ++c) {
+      channels[c][i] = read(dataOffset + i * frameSize + c * bytes);
+    }
+  }
+  return { channels, sampleRate: fmt.sampleRate };
+}
+
+// サンプルレートが違うと音程が変わるので、オーディオの再生レートに直線補間で合わせる
+function resample(channels, from, to) {
+  if (from === to) return channels;
+  const ratio = from / to;
+  const length = Math.floor(channels[0].length / ratio);
+  return channels.map((ch) => {
+    const out = new Float32Array(length);
+    const last = ch.length - 1;
+    for (let i = 0; i < length; ++i) {
+      const x = i * ratio;
+      const j = Math.min(Math.floor(x), last);
+      const k = Math.min(j + 1, last);
+      out[i] = ch[j] + (ch[k] - ch[j]) * (x - j);
+    }
+    return out;
+  });
+}
+
+async function decodeAudio(arrayBuffer) {
+  try {
+    // decodeAudioData は渡したバッファを使えなくするので、コピーを渡す
+    const audio = await decodeWithContext(arrayBuffer.slice(0));
+    const channels = [];
+    for (let c = 0; c < Math.min(2, audio.numberOfChannels); ++c) {
+      channels.push(audio.getChannelData(c).slice());
+    }
+    return { channels, sampleRate: audio.sampleRate };
+  } catch (err) {
+    console.warn('decodeAudioData に失敗したので、WAV を直接読みます。', err);
+    return parseWav(arrayBuffer);
+  }
+}
+
+async function loadFile(file) {
+  showStatus(`${file.name} を読み込み中…`);
+  try {
+    await ensureAudio();
+    const decoded = await decodeAudio(await file.arrayBuffer());
+    setBuffer(decoded.channels, decoded.sampleRate, file.name);
+  } catch (err) {
+    console.error(err);
+    showStatus(`読み込みに失敗しました：${err.message}`);
+  }
+}
+
+function setBuffer(channels, sampleRate, name) {
+  channels = resample(channels, sampleRate, ctx.sampleRate);
+  const length = channels[0].length;
+  if (length < 4 * HEAD_CROSSING_SAFETY_ZONE) {
+    showStatus('音声が短すぎます（0.03 秒以上の音声を使ってください）');
+    return;
+  }
+  buffer = {
+    channels,
+    sampleRate: ctx.sampleRate,
+    duration: length / ctx.sampleRate,
+    name,
+  };
+  // エンジンには別コピーを渡す（表示用の配列は手元に残す）
+  const copies = channels.map((ch) => ch.slice());
+  engine.post({ type: 'buffer', channels: copies }, copies.map((c) => c.buffer));
+  showStatus(`${name} — ${buffer.duration.toFixed(2)} 秒 / ${channels.length === 2 ? 'ステレオ' : 'モノラル'}`);
+  renderWaveformImage();
+  updateReadouts();
+}
+
+function generateDemoChannels(sr) {
+  const seconds = 8;
+  const L = new Float32Array(sr * seconds);
+  const R = new Float32Array(sr * seconds);
+  // ペンタトニックのアルペジオ + 持続音 + 後半にノイズ混じりのテクスチャ
+  const scale = [0, 3, 5, 7, 10, 12, 15, 17];
+  const noteLen = 0.25;
+  for (let n = 0; n * noteLen < seconds; ++n) {
+    const start = Math.floor(n * noteLen * sr);
+    const semis = scale[(n * 5 + (n >> 3)) % scale.length] + (n >= 16 ? -12 : 0);
+    const freq = 220 * Math.pow(2, semis / 12);
+    const pan = 0.5 + 0.4 * Math.sin(n * 0.9);
+    for (let i = 0; i < sr * 1.2 && start + i < L.length; ++i) {
+      const t = i / sr;
+      const env = Math.exp(-t * 4) * Math.min(1, t * 400);
+      const s = env * 0.25 * (
+          Math.sin(2 * Math.PI * freq * t) +
+          0.5 * Math.sin(2 * Math.PI * freq * 2 * t) * Math.exp(-t * 6) +
+          0.25 * Math.sin(2 * Math.PI * freq * 3.01 * t) * Math.exp(-t * 10));
+      L[start + i] += s * (1 - pan) * 1.4;
+      R[start + i] += s * pan * 1.4;
+    }
+  }
+  for (let i = 0; i < L.length; ++i) {
+    const t = i / sr;
+    const pad = 0.08 * Math.sin(2 * Math.PI * 110 * t) * (0.5 + 0.5 * Math.sin(2 * Math.PI * 0.25 * t));
+    const noise = t > 5 ? (Math.random() * 2 - 1) * 0.05 * (t - 5) / 3 : 0;
+    L[i] += pad + noise;
+    R[i] += pad * 0.9 + noise;
+  }
+  return [L, R];
+}
+
+async function loadDemo() {
+  try {
+    await ensureAudio();
+    setBuffer(generateDemoChannels(ctx.sampleRate), ctx.sampleRate, 'デモ音源');
+  } catch (err) {
+    console.error(err);
+    showStatus(`デモ音源を作れませんでした：${err.message}`);
+  }
+}
+
+$('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';  // 同じファイルをもう一度選んでも読み込めるようにする
+  if (file) loadFile(file);
+});
+$('demoBtn').addEventListener('click', loadDemo);
+
+const waveWrap = $('waveWrap');
+waveWrap.addEventListener('dragover', (e) => { e.preventDefault(); waveWrap.classList.add('drag'); });
+waveWrap.addEventListener('dragleave', () => waveWrap.classList.remove('drag'));
+waveWrap.addEventListener('drop', (e) => {
+  e.preventDefault();
+  waveWrap.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+
+// ---------- トランスポート ----------
+
+async function prepareToPlay() {
+  await ensureAudio();
+  if (ctx.state !== 'running') await ctx.resume();
+  if (!buffer) await loadDemo();
+  return !!buffer;
+}
+
+async function togglePlay() {
+  try {
+    if (!running && !(await prepareToPlay())) return;
+  } catch (err) {
+    showStatus(`音を出せませんでした：${err.message}`);
+    return;
+  }
+  running = !running;
+  $('playBtn').textContent = running ? '■ Stop' : '▶ Start';
+  sendParams();
+}
+
+$('playBtn').addEventListener('click', togglePlay);
+$('seedBtn').addEventListener('click', async () => {
+  if (await prepareToPlay()) engine.post({ type: 'seed' });
+});
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !['INPUT', 'SELECT', 'BUTTON'].includes(e.target.tagName)) {
+    e.preventDefault();
+    togglePlay();
+  }
+});
+
+for (const el of Object.values(ui)) {
+  el.addEventListener('input', sendParams);
+  el.addEventListener('change', sendParams);
+}
+for (const el of qsa('.param input[type=range], #gain')) {
+  el.addEventListener('dblclick', () => {
+    el.value = el.defaultValue;
+    sendParams();
+  });
+}
+
+// ---------- 数値表示 ----------
+
+function grainLengthSeconds() {
+  const sr = ctx ? ctx.sampleRate : 48000;
+  return computeGrainDuration(+ui.size.value, sr * 4) / sr;
+}
+
+function updateReadouts() {
+  const time = +ui.time.value;
+  $('timeVal').textContent = buffer
+      ? `${(time * buffer.duration).toFixed(2)} 秒`
+      : `${(time * 100).toFixed(0)}%`;
+
+  const size = +ui.size.value;
+  const ms = grainLengthSeconds() * 1000;
+  const msText = ms < 10 ? ms.toFixed(1) : ms.toFixed(0);
+  $('sizeVal').textContent = `${msText} ms ${size < 0.3333333 ? '◀ 逆' : '▶'}`;
+  $('statLen').textContent = msText;
+
+  const shape = +ui.shape.value;
+  const names = ['矩形', 'ディケイ', 'ベル', 'リバース'];
+  $('shapeVal').textContent = names[Math.min(3, Math.round(shape * 3))];
+
+  const semis = currentPitch();
+  $('pitchVal').textContent = `${semis >= 0 ? '+' : ''}${semis.toFixed(ui.pitchQuant.checked ? 0 : 1)} 半音`;
+
+  drawEnvelopePreview();
+}
+
+// ---------- 描画 ----------
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function fitCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(canvas.clientWidth * dpr);
+  const h = Math.round(canvas.clientHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    return true;
+  }
+  return false;
+}
+
+function drawEnvelopePreview() {
+  const canvas = $('envPreview');
+  fitCanvas(canvas);
+  const w = canvas.width, h = canvas.height;
+  if (w === 0 || h === 0) return;
+  const g = canvas.getContext('2d');
+  g.clearRect(0, 0, w, h);
+  // 実際の GrainEnvelope をグレイン長ぶん回して形を描く
+  const sr = ctx ? ctx.sampleRate : 48000;
+  const duration = computeGrainDuration(+ui.size.value, sr * 4);
+  const env = new GrainEnvelope(sr);
+  env.start(duration, +ui.shape.value);
+  const values = [];
+  while (!env.done() && values.length < sr * 5) values.push(env.render());
+  const dpr = window.devicePixelRatio || 1;
+  const pad = 3 * dpr;
+  g.strokeStyle = css('--accent');
+  g.lineWidth = 1.5 * dpr;
+  g.beginPath();
+  for (let x = 0; x < w; ++x) {
+    const v = values[Math.floor(x / w * values.length)] || 0;
+    const y = h - pad - v * (h - 2 * pad);
+    if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.stroke();
+}
+
+const waveCanvas = $('wave');
+const trailCanvas = $('trail');
+let waveImage = null;
+
+function renderWaveformImage() {
+  fitCanvas(waveCanvas);
+  const w = waveCanvas.width, h = waveCanvas.height;
+  if (w === 0 || h === 0) {
+    waveImage = null;
+    return;
+  }
+  waveImage = document.createElement('canvas');
+  waveImage.width = w;
+  waveImage.height = h;
+  const g = waveImage.getContext('2d');
+  g.fillStyle = '#0e1013';
+  g.fillRect(0, 0, w, h);
+  if (!buffer) return;
+  const data = buffer.channels;
+  const len = data[0].length;
+  const mid = h / 2;
+  g.fillStyle = css('--wave');
+  for (let x = 0; x < w; ++x) {
+    const from = Math.floor(x / w * len);
+    const to = Math.max(from + 1, Math.floor((x + 1) / w * len));
+    let min = 1, max = -1;
+    for (let i = from; i < to; i += 4) {
+      for (const ch of data) {
+        const v = ch[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+    g.fillRect(x, mid - max * mid * 0.85, 1, Math.max(1, (max - min) * mid * 0.85));
+  }
+}
+
+window.addEventListener('resize', () => {
+  renderWaveformImage();
+  drawEnvelopePreview();
+});
+
+const grainColor = (i, alpha) => `hsla(${(i * 137.5) % 360}, 85%, 62%, ${alpha})`;
+
+function drawWave() {
+  if (fitCanvas(waveCanvas) || !waveImage) renderWaveformImage();
+  if (!waveImage) return;
+  const g = waveCanvas.getContext('2d');
+  const w = waveCanvas.width, h = waveCanvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  g.drawImage(waveImage, 0, 0);
+  if (!buffer) return;
+
+  // TIME の位置（つまみの値＝実線、LFO で動いたいまの値＝点線）
+  const drawLine = (x, color, dashed) => {
+    g.strokeStyle = color;
+    g.lineWidth = 1.5 * dpr;
+    g.setLineDash(dashed ? [4 * dpr, 4 * dpr] : []);
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, h);
+    g.stroke();
+    g.setLineDash([]);
+  };
+  drawLine(+ui.time.value * w, css('--value'), false);
+  const timeCables = activeCables('time');
+  if (timeCables.length && grainState) {
+    drawLine(grainState.effective[0] * w, LFO_COLORS[strongest(timeCables).s], true);
+  }
+
+  if (!grainState) return;
+  const s = grainState.grains;
+  for (let i = 0; i < NUM_GRAINS; ++i) {
+    const pos = s[i * 4];
+    if (pos < 0) continue;
+    const level = s[i * 4 + 1];
+    const pan = s[i * 4 + 2];
+    const gx = pos * w;
+    const gy = (1 - pan) * h * 0.8 + h * 0.1;
+    g.strokeStyle = grainColor(i, 0.2 + 0.5 * level);
+    g.lineWidth = dpr;
+    g.beginPath();
+    g.moveTo(gx, 0);
+    g.lineTo(gx, h);
+    g.stroke();
+    g.fillStyle = grainColor(i, 0.35 + 0.65 * level);
+    g.beginPath();
+    g.arc(gx, gy, (3 + 9 * level) * dpr, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+let lastTrailTime = performance.now();
+function drawTrail(now) {
+  fitCanvas(trailCanvas);
+  const g = trailCanvas.getContext('2d');
+  const w = trailCanvas.width, h = trailCanvas.height;
+  if (w === 0 || h === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const secondsVisible = 4;
+  const dx = Math.max(0, Math.round((now - lastTrailTime) / 1000 / secondsVisible * w));
+  if (dx > 0) {
+    lastTrailTime += dx * secondsVisible * 1000 / w;
+    g.drawImage(trailCanvas, -dx, 0);
+    g.fillStyle = '#0e1013';
+    g.fillRect(w - dx, 0, dx, h);
+  }
+  if (!grainState || (!running && grainState.active === 0)) return;
+  const s = grainState.grains;
+  for (let i = 0; i < NUM_GRAINS; ++i) {
+    const pos = s[i * 4];
+    if (pos < 0) continue;
+    const level = s[i * 4 + 1];
+    g.fillStyle = grainColor(i, 0.2 + 0.8 * level);
+    const y = (1 - pos) * h;
+    const width = Math.max(dx, 2 * dpr);
+    g.fillRect(w - width, y - (1 + 2 * level) * dpr, width, (2 + 4 * level) * dpr);
+  }
+}
+
+// ============================================================
+// 変調（LFO×2）とパッチケーブル
+// なみシンセ（nami-synth/index.html）の LFO パネルとケーブル操作を元にしている
+// ============================================================
+const LFO_COLORS = [css('--lfo1'), css('--lfo2')];
+const LFO_COLORS_BG = ['rgba(0,217,163,.14)', 'rgba(255,138,74,.14)'];
+const LFO_NAMES = ['LFO1', 'LFO2'];
+const WAVE_JA = { sine: 'サイン波', triangle: '三角波', sawtooth: 'ノコギリ波', square: '矩形波', sh: 'ランダム（S&H）' };
+const WAVE_ICON = {
+  sine: 'M2 10 Q9 -4 16 10 T30 10',
+  triangle: 'M2 10 L9 3 L23 17 L30 10',
+  sawtooth: 'M2 16 L15 4 V16 L28 4 V16',
+  square: 'M2 16 V4 H16 V16 H30 V4',
+  sh: 'M2 12 H8 V4 H14 V15 H20 V7 H26 V13 H30',
+};
+const LFO_RATE_MIN = 0.02;
+const LFO_RATE_MAX = 50;
+const MAX_CABLES = 12;
+const LFO_HISTORY = 120;  // ランダム波形の表示に使う直近の出力（約 2 秒）
+// BPM 同期：1 周にかかる拍数
+const SYNC_OPTIONS = [
+  ['', '同期なし'], ['16', '4小節'], ['8', '2小節'], ['4', '1小節'],
+  ['2', '2拍'], ['1', '1拍'], ['0.5', '1/8'], ['0.25', '1/16'],
+];
+
+const fmtNum = (x) => (x < 1 ? x.toFixed(2) : x < 10 ? x.toFixed(1) : x.toFixed(0));
+const pctpm = (d) => `±${Math.round(d * 100)}%`;
+// 行き先（ジャック）の一覧と、深さの表示
+const DSTS = {
+  time: { ja: 'TIME', fmt: pctpm },
+  size: { ja: 'SIZE', fmt: pctpm },
+  shape: { ja: 'SHAPE', fmt: pctpm },
+  pitch: { ja: 'PITCH', fmt: (d) => `±${fmtNum(d * 24)} 半音` },
+  rate: { ja: 'トリガー速さ', fmt: (d) => `±${fmtNum(d * 2)} オクターブ` },
+  amp: { ja: '音量', fmt: pctpm },
+};
+for (let i = 0; i < NUM_LFOS; ++i) {
+  DSTS['rate' + i] = { ja: `${LFO_NAMES[i]}の速さ`, fmt: (d) => `±${fmtNum(d * LFO_RATE_OCTAVES)} オクターブ` };
+  DSTS['lvl' + i] = { ja: `${LFO_NAMES[i]}の出力`, fmt: pctpm };
+}
+
+const MOD_DEFAULT = {
+  lfos: [
+    { on: true, wave: 'sine', rate: 0.5, level: 1, sync: '' },
+    { on: false, wave: 'triangle', rate: 1, level: 1, sync: '' },
+  ],
+  cables: [],
+};
+
+// 例（cables は [もと, 行き先, 深さ]）
+const MOD_PRESETS = {
+  'TIME をゆっくり動かす（LFO1 → TIME）': {
+    lfos: { 0: { on: true, wave: 'triangle', sync: '16' } },
+    cables: [[0, 'time', 0.35]],
+  },
+  'ランダムなメロディ（LFO1 ランダム → PITCH）': {
+    lfos: { 0: { on: true, wave: 'sh', sync: '1' } },
+    cables: [[0, 'pitch', 0.5]],
+  },
+  '呼吸するグレイン（LFO2 → SIZE）': {
+    lfos: { 1: { on: true, wave: 'sine', rate: 0.2 } },
+    cables: [[1, 'size', 0.3]],
+  },
+  'トリガーの加速・減速（LFO1 → トリガー速さ）': {
+    lfos: { 0: { on: true, wave: 'sine', rate: 0.15 } },
+    cables: [[0, 'rate', 0.6]],
+  },
+  'トレモロ（LFO2 → 音量）': {
+    lfos: { 1: { on: true, wave: 'square', sync: '0.5' } },
+    cables: [[1, 'amp', 0.8]],
+  },
+  'ゆれる速さ（LFO1 → LFO2 の速さ）': {
+    lfos: { 0: { on: true, wave: 'sine', rate: 0.1 }, 1: { on: true, wave: 'triangle', rate: 1 } },
+    cables: [[0, 'rate1', 0.6], [1, 'shape', 0.5]],
+  },
+};
+
+let modState = clone(MOD_DEFAULT);
+const lfoHistory = [0, 1].map(() => new Float32Array(LFO_HISTORY));
+let lfoHistoryIndex = 0;
+
+const rateToN = (r) => clamp01(Math.log(r / LFO_RATE_MIN) / Math.log(LFO_RATE_MAX / LFO_RATE_MIN));
+const rateFromN = (n) => LFO_RATE_MIN * Math.pow(LFO_RATE_MAX / LFO_RATE_MIN, n);
+const effectiveRate = (s) => (s.sync ? constrainNum(+ui.bpm.value, 20, 300) / 60 / +s.sync : s.rate);
+
+function sendMod() {
+  if (!engine) return;
+  engine.post({
+    type: 'mod',
+    lfos: modState.lfos.map((s) => ({
+      on: s.on,
+      wave: Math.max(0, LFO_WAVES.indexOf(s.wave)),
+      rate: effectiveRate(s),
+      level: s.level,
+    })),
+    cables: modState.cables.map((c) => [c.s, MOD_CODE[c.d], c.depth]),
+  });
+}
+
+function modChanged() {
+  updateModUI();
+  sendMod();
+}
+
+function activeCables(dst) {
+  return modState.cables.filter((c) => c.d === dst && c.depth > 0 && modState.lfos[c.s].on);
+}
+
+function strongest(list) {
+  return list.reduce((a, b) => (b.depth > a.depth ? b : a));
+}
+
+// ---------- LFO パネル ----------
+const waveIcon = (w) => `<svg viewBox="0 0 32 20" aria-hidden="true"><path d="${WAVE_ICON[w]}"/></svg>`;
+const cards = [];
+for (let i = 0; i < NUM_LFOS; ++i) {
+  const el = document.createElement('div');
+  el.className = 'card lfo';
+  el.style.setProperty('--c', LFO_COLORS[i]);
+  el.style.setProperty('--cb', LFO_COLORS_BG[i]);
+  el.innerHTML = `
+    <div class="lfo-head">
+      <h3>${LFO_NAMES[i]}</h3>
+      <button class="toggle" aria-pressed="false" aria-label="${LFO_NAMES[i]} オン/オフ"><span class="sw"></span><span class="tt">オフ</span></button>
+      <span class="outl">出力</span><span class="outj" title="ドラッグして、つまみの ◎ につなぐ"></span>
+    </div>
+    <div class="lfo-body">
+      <canvas class="mini"></canvas>
+      <div class="lfo-controls">
+        <div class="ctl"><span>速さ</span><span class="dj" data-dst="rate${i}" title="${LFO_NAMES[i]}の速さ"></span><input class="lfo-rate" type="range" min="0" max="1" step="0.001" aria-label="${LFO_NAMES[i]} の速さ"></div>
+        <div class="ctl"><span>出力</span><span class="dj" data-dst="lvl${i}" title="${LFO_NAMES[i]}の出力"></span><input class="lfo-level" type="range" min="0" max="1" step="0.01" aria-label="${LFO_NAMES[i]} の出力"></div>
+        <div class="lfo-row">
+          <div class="waves">${LFO_WAVES.map((w) => `<button data-v="${w}" title="${WAVE_JA[w]}" aria-label="${WAVE_JA[w]}">${waveIcon(w)}</button>`).join('')}</div>
+          <select class="lfo-sync" title="BPM に同期（1 周の長さ）" aria-label="${LFO_NAMES[i]} のBPM同期">${SYNC_OPTIONS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>
+        </div>
+      </div>
+    </div>
+    <div class="conns"></div>`;
+  $('lfo' + i).replaceWith(el);
+  const card = {
+    el,
+    mini: qs('.mini', el),
+    rate: qs('.lfo-rate', el),
+    level: qs('.lfo-level', el),
+    sync: qs('.lfo-sync', el),
+    toggle: qs('.toggle', el),
+    conns: qs('.conns', el),
+  };
+  cards.push(card);
+  const s = () => modState.lfos[i];
+  card.toggle.addEventListener('click', () => { s().on = !s().on; modChanged(); });
+  card.rate.addEventListener('input', () => { s().rate = rateFromN(+card.rate.value); modChanged(); });
+  card.level.addEventListener('input', () => { s().level = +card.level.value; modChanged(); });
+  card.sync.addEventListener('change', () => { s().sync = card.sync.value; modChanged(); });
+  qs('.outj', el).addEventListener('pointerdown', (e) => startDrag(e, i, null));
+  qs('.waves', el).addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { s().wave = b.dataset.v; modChanged(); }
+  });
+  card.conns.addEventListener('click', (e) => {
+    const b = e.target.closest('.chip');
+    if (b && modState.cables[+b.dataset.k]) openPop(modState.cables[+b.dataset.k]);
+  });
+}
+
+function updateModUI() {
+  modState.lfos.forEach((s, i) => {
+    const card = cards[i];
+    card.el.classList.toggle('off', !s.on);
+    card.toggle.setAttribute('aria-pressed', s.on);
+    qs('.tt', card.toggle).textContent = s.on ? 'オン' : 'オフ';
+    card.rate.disabled = !!s.sync;
+    if (s.sync || document.activeElement !== card.rate) card.rate.value = rateToN(effectiveRate(s));
+    card.level.value = s.level;
+    card.sync.value = s.sync;
+    for (const b of qsa('.waves button', card.el)) {
+      const on = b.dataset.v === s.wave;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on);
+    }
+    // つなぎ先の一覧
+    const mine = [];
+    modState.cables.forEach((c, k) => { if (c.s === i) mine.push([c, k]); });
+    const sig = mine.map(([c, k]) => `${k}:${c.d}:${c.depth > 0}`).join(',');
+    if (card.conns.dataset.sig !== sig) {
+      card.conns.dataset.sig = sig;
+      card.conns.innerHTML = mine.length
+        ? '<span class="hint">つなぎ先</span>' + mine.map(([c, k]) => `<button class="chip${c.depth > 0 ? '' : ' zero'}" data-k="${k}" title="クリックで深さを変える">${DSTS[c.d].ja}</button>`).join('')
+        : '<span class="hint">出力 ● を、つまみの ◎ へドラッグ</span>';
+    }
+  });
+
+  if (popCable && !modState.cables.includes(popCable)) closePop();
+  if (popCable) $('popVal').textContent = DSTS[popCable.d].fmt(popCable.depth);
+}
+
+// 例とリセット
+const presetSelect = $('modPreset');
+presetSelect.innerHTML = '<option value="">変調の例を読み込む…</option>' +
+    Object.keys(MOD_PRESETS).map((k) => `<option>${k}</option>`).join('');
+presetSelect.addEventListener('change', () => {
+  const preset = MOD_PRESETS[presetSelect.value];
+  presetSelect.value = '';
+  if (!preset) return;
+  const next = clone(MOD_DEFAULT);
+  next.lfos[0].on = false;
+  for (const i in preset.lfos) Object.assign(next.lfos[i], preset.lfos[i]);
+  next.cables = preset.cables.map(([src, d, depth]) => ({ s: src, d, depth }));
+  modState = next;
+  closePop();
+  modChanged();
+  toast(running ? '例を読み込みました' : '例を読み込みました。▶ Start で鳴らしてみよう');
+});
+$('modClear').addEventListener('click', () => {
+  modState.cables = [];
+  closePop();
+  modChanged();
+});
+
+// ---------- つまみ側の表示（変調の幅といまの値）----------
+const modbars = [];
+function addModbar(dst, input, toN, range, current) {
+  const bar = document.createElement('div');
+  bar.className = 'modbar';
+  bar.innerHTML = '<i class="band"></i><i class="cur"></i>';
+  input.insertAdjacentElement('afterend', bar);
+  modbars.push({ dst, input, bar, band: bar.firstChild, cur: bar.lastChild, toN, range, current });
+}
+const pitchToN = (v) => clamp01((v + 24) / 48);
+addModbar('time', ui.time, (v) => v, 1, () => grainState.effective[0]);
+addModbar('size', ui.size, (v) => v, 1, () => grainState.effective[1]);
+addModbar('shape', ui.shape, (v) => v, 1, () => grainState.effective[2]);
+addModbar('pitch', ui.pitch, pitchToN, 0.5, () => pitchToN(grainState.effective[3]));
+const RATE_RANGE_N = LFO_RATE_OCTAVES / Math.log2(LFO_RATE_MAX / LFO_RATE_MIN);
+for (let i = 0; i < NUM_LFOS; ++i) {
+  addModbar('rate' + i, cards[i].rate, (v) => v, RATE_RANGE_N, () => rateToN(grainState.lfo[i * 4 + 2]));
+  addModbar('lvl' + i, cards[i].level, (v) => v, 1, () => grainState.lfo[i * 4 + 3]);
+}
+
+function updateModbars() {
+  for (const mb of modbars) {
+    const list = activeCables(mb.dst);
+    if (!list.length || !grainState) {
+      mb.bar.classList.remove('on');
+      continue;
+    }
+    mb.bar.classList.add('on');
+    const depth = list.reduce((sum, c) => sum + c.depth, 0);
+    const color = LFO_COLORS[strongest(list).s];
+    const base = mb.toN(+mb.input.value);
+    const lo = clamp01(base - mb.range * depth);
+    const hi = clamp01(base + mb.range * depth);
+    mb.band.style.left = `${lo * 100}%`;
+    mb.band.style.width = `${(hi - lo) * 100}%`;
+    mb.band.style.background = color;
+    mb.cur.style.left = `${clamp01(mb.current()) * 100}%`;
+    mb.cur.style.background = color;
+  }
+  const rateOn = activeCables('rate').length && grainState;
+  $('rateNow').textContent = rateOn ? `×${grainState.effective[4].toFixed(2)}` : '';
+  const ampOn = activeCables('amp').length && grainState;
+  $('ampNow').textContent = ampOn ? `${Math.round(+ui.gain.value * grainState.effective[5] * 100)}%` : '';
+}
+
+// ---------- LFO の小さな波形表示 ----------
+function drawMini(i) {
+  const canvas = cards[i].mini;
+  fitCanvas(canvas);
+  const w = canvas.width, h = canvas.height;
+  if (w === 0 || h === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const g = canvas.getContext('2d');
+  const s = modState.lfos[i];
+  const color = LFO_COLORS[i];
+  const on = s.on && !!grainState;
+  const pad = 6 * dpr, top = 17 * dpr, bottom = h - 6 * dpr;
+  const mid = (top + bottom) / 2, amp = (bottom - top) / 2;
+  const X = (p) => pad + p * (w - 2 * pad);
+  const Y = (v) => mid - v * amp;
+
+  g.fillStyle = '#0e1013';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#262b31';
+  g.lineWidth = dpr;
+  g.beginPath();
+  g.moveTo(pad, mid);
+  g.lineTo(w - pad, mid);
+  g.stroke();
+
+  const level = grainState ? grainState.lfo[i * 4 + 3] : s.level;
+  const periodic = s.wave !== 'sh';
+  const history = lfoHistory[i];
+  const n = LFO_HISTORY;
+  g.beginPath();
+  if (periodic) {
+    const wave = LFO_WAVES.indexOf(s.wave);
+    for (let x = 0; x <= 64; ++x) {
+      const p = x / 64;
+      const y = Y(lfoWave(wave, p) * level);
+      if (x === 0) g.moveTo(X(p), y); else g.lineTo(X(p), y);
+    }
+  } else {
+    // 直近の出力を、左（古い）から右（新しい）へ階段で描く
+    for (let k = 0; k < n; ++k) {
+      const v = history[(lfoHistoryIndex + k) % n];
+      const x = X(k / (n - 1));
+      if (k === 0) {
+        g.moveTo(x, Y(v));
+      } else {
+        g.lineTo(x, Y(history[(lfoHistoryIndex + k - 1) % n]));
+        g.lineTo(x, Y(v));
+      }
+    }
+  }
+  g.strokeStyle = color;
+  g.globalAlpha = on ? 0.85 : 0.3;
+  g.lineWidth = 2 * dpr;
+  g.lineJoin = 'round';
+  g.stroke();
+  g.globalAlpha = 1;
+
+  if (on) {
+    const value = grainState.lfo[i * 4 + 1];
+    const x = periodic ? X(grainState.lfo[i * 4]) : X(1);
+    g.fillStyle = color;
+    g.globalAlpha = 0.3;
+    g.beginPath();
+    g.arc(x, Y(value), 7 * dpr, 0, Math.PI * 2);
+    g.fill();
+    g.globalAlpha = 1;
+    g.beginPath();
+    g.arc(x, Y(value), 3.5 * dpr, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  g.font = `${10 * dpr}px sans-serif`;
+  g.fillStyle = css('--muted');
+  g.textBaseline = 'top';
+  g.textAlign = 'left';
+  g.fillText(WAVE_JA[s.wave].replace('（S&H）', ''), pad, 3 * dpr);
+  g.textAlign = 'right';
+  const rate = grainState && s.on ? grainState.lfo[i * 4 + 2] : effectiveRate(s);
+  g.fillText(`${fmtNum(rate)} Hz`, w - pad, 3 * dpr);
+}
+
+// ---------- パッチケーブル ----------
+const mainEl = $('main');
+const cableSvg = $('cables');
+const SVGNS = 'http://www.w3.org/2000/svg';
+const cablePool = [];  // ケーブルの見た目（光・線・プラグ）を使い回す
+const plugOwner = [];
+let drag = null;
+let jackPos = { src: [], dst: {} };
+
+function cableEls(k) {
+  while (cablePool.length <= k) {
+    const index = cablePool.length;
+    const glow = document.createElementNS(SVGNS, 'path');
+    const path = document.createElementNS(SVGNS, 'path');
+    const plug = document.createElementNS(SVGNS, 'circle');
+    plug.setAttribute('class', 'plug');
+    plug.setAttribute('r', 6.5);
+    plug.setAttribute('stroke', '#11112a');
+    plug.setAttribute('stroke-width', 2.5);
+    plug.addEventListener('pointerdown', (e) => {
+      const c = plugOwner[index];
+      if (c) startDrag(e, c.s, c);
+    });
+    cableSvg.appendChild(glow);
+    cableSvg.appendChild(path);
+    cableSvg.appendChild(plug);
+    cablePool.push({ glow, path, plug });
+  }
+  return cablePool[k];
+}
+
+// ジャックの位置（main の左上からの座標）を測り直す
+function measureJacks() {
+  const m = mainEl.getBoundingClientRect();
+  const center = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return null;
+    return { x: r.left + r.width / 2 - m.left, y: r.top + r.height / 2 - m.top };
+  };
+  jackPos = { src: cards.map((c) => center(qs('.outj', c.el))), dst: {} };
+  for (const j of qsa('.dj')) {
+    const p = center(j);
+    if (p) jackPos.dst[j.dataset.dst] = p;
+  }
+  const w = mainEl.offsetWidth, h = mainEl.offsetHeight;
+  if (+cableSvg.getAttribute('width') !== w || +cableSvg.getAttribute('height') !== h) {
+    cableSvg.setAttribute('width', w);
+    cableSvg.setAttribute('height', h);
+    cableSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  }
+}
+
+function plugGroups() {
+  const groups = {};
+  for (const c of modState.cables) {
+    if (drag && drag.moved && drag.cable === c) continue;
+    (groups[c.d] = groups[c.d] || []).push(c);
+  }
+  return groups;
+}
+
+function plugPos(c, groups) {
+  const base = jackPos.dst[c.d];
+  if (!base) return null;
+  const list = (groups || plugGroups())[c.d] || [c];
+  const i = Math.max(0, list.indexOf(c));
+  return { x: base.x + (i - (list.length - 1) / 2) * 13, y: base.y };
+}
+
+function cablePath(a, b) {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const sag = Math.min(120, 25 + dist * 0.22);
+  return `M${a.x.toFixed(1)} ${a.y.toFixed(1)} C${a.x.toFixed(1)} ${(a.y + sag).toFixed(1)} ${b.x.toFixed(1)} ${(b.y + sag).toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+}
+
+function drawCables() {
+  const groups = plugGroups();
+  let k = 0;
+  const show = (el, a, b, color, o) => {
+    const d = cablePath(a, b);
+    el.path.setAttribute('d', d);
+    el.glow.setAttribute('d', d);
+    el.path.setAttribute('stroke', color);
+    el.glow.setAttribute('stroke', color);
+    el.plug.setAttribute('fill', color);
+    el.plug.setAttribute('cx', b.x.toFixed(1));
+    el.plug.setAttribute('cy', b.y.toFixed(1));
+    el.path.style.display = el.plug.style.display = '';
+    if (o.dash) el.path.setAttribute('stroke-dasharray', '4 6'); else el.path.removeAttribute('stroke-dasharray');
+    el.path.setAttribute('stroke-width', o.w);
+    el.path.style.opacity = o.op.toFixed(3);
+    el.plug.style.opacity = o.plug;
+    if (o.glow > 0) {
+      el.glow.style.display = '';
+      el.glow.setAttribute('stroke-width', o.w + 7);
+      el.glow.style.opacity = o.glow.toFixed(3);
+    } else {
+      el.glow.style.display = 'none';
+    }
+  };
+  const dragTarget = () => (drag.hot ? jackPos.dst[drag.hot] : drag.p);
+
+  for (const c of modState.cables) {
+    const a = jackPos.src[c.s];
+    const color = LFO_COLORS[c.s];
+    const el = cableEls(k);
+    plugOwner[k] = c;
+    ++k;
+    if (drag && drag.moved && drag.cable === c) {
+      show(el, a, dragTarget(), color, { w: 3.5, op: 0.95, plug: 1, glow: 0.2 });
+      continue;
+    }
+    const b = plugPos(c, groups);
+    if (!a || !b) {
+      el.path.style.display = el.glow.style.display = el.plug.style.display = 'none';
+      continue;
+    }
+    if (!modState.lfos[c.s].on) {
+      show(el, a, b, color, { w: 2, op: 0.22, plug: 0.5, glow: 0 });
+    } else if (c.depth <= 0) {
+      show(el, a, b, color, { w: 2, op: 0.5, plug: 0.7, glow: 0, dash: true });
+    } else {
+      // ケーブルの明るさで、いまの LFO の値を見せる
+      const value = grainState ? grainState.lfo[c.s * 4 + 1] : 0;
+      const brightness = 0.35 + 0.6 * clamp01((value + 1) / 2);
+      show(el, a, b, color, { w: 2 + 2.5 * c.depth, op: brightness, plug: 1, glow: brightness * 0.25 });
+    }
+  }
+  if (drag && drag.moved && !drag.cable) {
+    const el = cableEls(k);
+    plugOwner[k] = null;
+    ++k;
+    show(el, jackPos.src[drag.s], dragTarget(), LFO_COLORS[drag.s], { w: 3.5, op: 0.95, plug: 1, glow: 0.2 });
+  }
+  for (; k < cablePool.length; ++k) {
+    const el = cablePool[k];
+    plugOwner[k] = null;
+    el.path.style.display = el.glow.style.display = el.plug.style.display = 'none';
+  }
+}
+
+// ---------- ドラッグでつなぐ・外す・つなぎ替える ----------
+function pointerPos(e) {
+  const m = mainEl.getBoundingClientRect();
+  return { x: e.clientX - m.left, y: e.clientY - m.top };
+}
+
+function nearestJack(p) {
+  let best = null;
+  let bestDistance = 28;
+  for (const d in jackPos.dst) {
+    const q = jackPos.dst[d];
+    const distance = Math.hypot(q.x - p.x, q.y - p.y);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = d;
+    }
+  }
+  return best;
+}
+
+function setHot(d) {
+  if (!drag || drag.hot === d) return;
+  qsa('.dj.hot').forEach((j) => j.classList.remove('hot'));
+  drag.hot = d;
+  if (d) qsa(`.dj[data-dst="${d}"]`).forEach((j) => j.classList.add('hot'));
+}
+
+function startDrag(e, s, cable) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  closePop();
+  measureJacks();
+  const p = pointerPos(e);
+  drag = { s, cable, p, start: p, moved: false, hot: null };
+  document.body.classList.add('patching');
+  document.body.style.setProperty('--hot', LFO_COLORS[s]);
+}
+
+window.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  drag.p = pointerPos(e);
+  if (!drag.moved && Math.hypot(drag.p.x - drag.start.x, drag.p.y - drag.start.y) > 5) drag.moved = true;
+  setHot(drag.moved ? nearestJack(drag.p) : null);
+});
+window.addEventListener('pointerup', () => { if (drag) finishDrag(); });
+window.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  setHot(null);
+  drag = null;
+  document.body.classList.remove('patching');
+});
+
+function finishDrag() {
+  const d = { ...drag };  // setHot(null) で drag.hot が消える前に写しておく
+  setHot(null);
+  drag = null;
+  document.body.classList.remove('patching');
+  if (d.cable) {
+    if (!d.moved) {
+      openPop(d.cable);
+      return;
+    }
+    if (d.hot) {
+      if (d.hot !== d.cable.d) {
+        const dup = modState.cables.find((c) => c !== d.cable && c.s === d.cable.s && c.d === d.hot);
+        if (dup) {
+          removeCable(d.cable);
+          modChanged();
+          openPop(dup);
+          return;
+        }
+        d.cable.d = d.hot;
+      }
+      modChanged();
+      openPop(d.cable);
+    } else {
+      removeCable(d.cable);
+      modChanged();
+      toast('ケーブルを外しました');
+    }
+    return;
+  }
+  if (!d.moved) {
+    toast('出力 ● をドラッグして、つまみの ◎ まで運んでね');
+    return;
+  }
+  if (!d.hot) return;
+  let c = modState.cables.find((x) => x.s === d.s && x.d === d.hot);
+  if (!c) {
+    if (modState.cables.length >= MAX_CABLES) {
+      toast('ケーブルが多すぎます。どれかを外してください');
+      return;
+    }
+    c = { s: d.s, d: d.hot, depth: 0.3 };
+    modState.cables.push(c);
+    modState.lfos[d.s].on = true;
+  }
+  modChanged();
+  openPop(c);
+}
+
+function removeCable(c) {
+  const i = modState.cables.indexOf(c);
+  if (i >= 0) modState.cables.splice(i, 1);
+  if (popCable === c) closePop();
+}
+
+// ---------- ケーブルの深さを決めるポップアップ ----------
+const pop = $('pop');
+const popDepth = $('popDepth');
+let popCable = null;
+
+function openPop(c) {
+  popCable = c;
+  pop.hidden = false;
+  pop.style.setProperty('--c', LFO_COLORS[c.s]);
+  qs('.pop-src', pop).textContent = LFO_NAMES[c.s];
+  qs('.pop-dst', pop).textContent = DSTS[c.d].ja;
+  popDepth.value = c.depth;
+  $('popVal').textContent = DSTS[c.d].fmt(c.depth);
+  positionPop();
+}
+
+function positionPop() {
+  if (!popCable) return;
+  measureJacks();
+  const pt = plugPos(popCable);
+  if (!pt) return;
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let x = pt.x + 18;
+  let y = pt.y - 40;
+  if (x + w > mainEl.offsetWidth - 6) x = pt.x - 18 - w;
+  y = Math.max(6, Math.min(y, mainEl.offsetHeight - h - 6));
+  pop.style.left = `${Math.max(6, x)}px`;
+  pop.style.top = `${y}px`;
+}
+
+function closePop() {
+  popCable = null;
+  pop.hidden = true;
+}
+
+popDepth.addEventListener('input', () => {
+  if (!popCable) return;
+  popCable.depth = +popDepth.value;
+  modChanged();
+});
+$('popDel').addEventListener('click', () => {
+  if (!popCable) return;
+  removeCable(popCable);
+  modChanged();
+  toast('ケーブルを外しました');
+});
+$('popClose').addEventListener('click', closePop);
+document.addEventListener('pointerdown', (e) => {
+  if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.plug, .chip, .outj')) closePop();
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+window.addEventListener('resize', positionPop);
+
+let toastTimer = 0;
+function toast(text) {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function drawModulation() {
+  measureJacks();
+  drawCables();
+  for (let i = 0; i < NUM_LFOS; ++i) drawMini(i);
+  updateModbars();
+}
+
+function frame(now) {
+  drawWave();
+  drawTrail(now);
+  drawModulation();
+  requestAnimationFrame(frame);
+}
+
+updateModUI();
+updateReadouts();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
